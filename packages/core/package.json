@@ -1,0 +1,36 @@
+{
+  "name": "@codeatlas/core",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "CodeAtlas core engine - parsing, graph building, storage, and AI analysis",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc && node -e \"const fs=require('fs'),p=require('path');const s='src/parser/language-packs',d='dist/parser/language-packs';fs.mkdirSync(d,{recursive:true});fs.readdirSync(s).filter(f=>f.endsWith('.wasm')).forEach(f=>fs.copyFileSync(p.join(s,f),p.join(d,f)));\"",
+    "dev": "tsc --watch",
+    "test": "vitest run",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
+  },
+  "dependencies": {
+    "glob": "^13.0.6",
+    "ignore": "^7.0.5",
+    "picomatch": "^4.0.4",
+    "sql.js": "^1.14.1",
+    "tree-sitter-wasms": "^0.1.13",
+    "web-tree-sitter": "^0.24.7"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^22.0.0",
+    "@types/picomatch": "^3.0.0",
+    "@types/sql.js": "^1.4.11",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}

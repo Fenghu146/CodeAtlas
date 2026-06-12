@@ -1,0 +1,37 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+*.js.map
+*.d.ts.map
+
+# IDE
+.vscode/
+!.vscode/settings.json
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# CodeAtlas generated
+.codeatlas/
+*.sqlite
+
+# Environment
+.env
+.env.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# Temp
+tmp/
+.cache/
+
+# npm (we use pnpm)
+package-lock.json
+npm-shrinkwrap.json

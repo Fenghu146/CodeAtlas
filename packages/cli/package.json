@@ -1,0 +1,32 @@
+{
+  "name": "@codeatlas/cli",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "CodeAtlas CLI - Command-line interface for code knowledge graph",
+  "main": "dist/index.js",
+  "bin": {
+    "codeatlas": "dist/index.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@codeatlas/core": "workspace:*",
+    "commander": "^15.0.0",
+    "chalk": "^5.4.0",
+    "ora": "^8.1.0",
+    "cli-table3": "^0.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0"
+  }
+}

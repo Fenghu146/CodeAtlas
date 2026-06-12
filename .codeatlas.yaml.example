@@ -1,0 +1,52 @@
+# CodeAtlas 配置文件
+# 放在项目根目录，自定义扫描和分析行为
+
+name: my-project
+version: "1.0"
+
+# 扫描配置
+scan:
+  include:
+    - src/**
+    - lib/**
+  exclude:
+    - node_modules/**
+    - dist/**
+    - "**/*.test.*"
+    - "**/*.spec.*"
+    - "**/__tests__/**"
+  languages:
+    - javascript
+    - typescript
+    # - python
+    # - go
+
+# 层级分类自定义规则
+layers:
+  interface:
+    paths:
+      - "src/api/**"
+      - "src/pages/**"
+      - "src/components/**"
+  business:
+    paths:
+      - "src/services/**"
+      - "src/domain/**"
+  data:
+    paths:
+      - "src/db/**"
+      - "src/repositories/**"
+
+# AI 配置
+ai:
+  provider: claude          # claude | openai | local
+  model: claude-sonnet-4-20250514
+  autoExplain: false        # 扫描后自动生成模块解释 (消耗 API tokens)
+  batchSize: 10             # 每批分析的模块数
+  # apiKey: 从环境变量 ANTHROPIC_API_KEY 读取
+  # baseUrl: http://localhost:11434  # 本地模型 (Ollama)
+
+# MCP Server 配置
+mcp:
+  autoScan: true            # 启动时自动增量扫描
+  watchChanges: true        # 监听文件变化自动更新

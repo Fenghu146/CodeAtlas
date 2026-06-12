@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CodeAtlas - Code Knowledge Graph</title>
+  <link rel="stylesheet" href="src/styles.css">
+</head>
+<body>
+  <!-- Top Bar -->
+  <header class="topbar">
+    <div class="logo">
+      <span class="logo-icon">🗺️</span>
+      <span class="logo-text">CodeAtlas</span>
+    </div>
+    <div class="search-box">
+      <input type="text" id="searchInput" placeholder="Search symbols... (e.g. 'UserService', 'handleAuth')" />
+      <div id="searchResults" class="search-results hidden"></div>
+    </div>
+    <div class="actions">
+      <button id="btnRescan" title="Rescan project">↻ Scan</button>
+      <button id="btnExport" title="Export graph">⬇ Export</button>
+      <button id="btnSettings" title="Settings">⚙</button>
+    </div>
+  </header>
+
+  <!-- Main Layout -->
+  <div class="main-layout">
+    <!-- Left Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <!-- Project Overview -->
+      <section class="sidebar-section">
+        <h3>📊 Project Overview</h3>
+        <div id="projectStats" class="stats-grid">
+          <div class="stat">
+            <span class="stat-value" id="statFiles">-</span>
+            <span class="stat-label">Files</span>
+          </div>
+          <div class="stat">
+            <span class="stat-value" id="statSymbols">-</span>
+            <span class="stat-label">Symbols</span>
+          </div>
+          <div class="stat">
+            <span class="stat-value" id="statRelationships">-</span>
+            <span class="stat-label">Relations</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Layer Filter -->
+      <section class="sidebar-section">
+        <h3>🏗️ Architecture Layers</h3>
+        <div class="layer-filters">
+          <label class="layer-toggle">
+            <input type="checkbox" checked data-layer="interface" />
+            <span class="layer-dot" style="background: #3b82f6;"></span>
+            Interface (<span id="countInterface">0</span>)
+          </label>
+          <label class="layer-toggle">
+            <input type="checkbox" checked data-layer="business" />
+            <span class="layer-dot" style="background: #22c55e;"></span>
+            Business (<span id="countBusiness">0</span>)
+          </label>
+          <label class="layer-toggle">
+            <input type="checkbox" checked data-layer="data" />
+            <span class="layer-dot" style="background: #f97316;"></span>
+            Data (<span id="countData">0</span>)
+          </label>
+          <label class="layer-toggle">
+            <input type="checkbox" checked data-layer="utility" />
+            <span class="layer-dot" style="background: #94a3b8;"></span>
+            Utility (<span id="countUtility">0</span>)
+          </label>
+        </div>
+      </section>
+
+      <!-- File Tree (populated dynamically) -->
+      <section class="sidebar-section">
+        <h3>📁 Files</h3>
+        <div id="fileTree" class="file-tree">
+          <p class="placeholder">Run <code>codeatlas scan</code> to see files</p>
+        </div>
+      </section>
+    </aside>
+
+    <!-- Graph Canvas -->
+    <main class="graph-container" id="graphContainer">
+      <!-- Cytoscape.js renders here -->
+      <div id="cy"></div>
+      
+      <!-- Graph Controls -->
+      <div class="graph-controls">
+        <button id="btnZoomIn" title="Zoom in">+</button>
+        <button id="btnZoomOut" title="Zoom out">−</button>
+        <button id="btnFit" title="Fit to screen">⊡</button>
+        <button id="btnLayout" title="Toggle layout">⬡</button>
+        <button id="btnFullscreen" title="Fullscreen">⛶</button>
+      </div>
+
+      <!-- Empty State -->
+      <div id="emptyState" class="empty-state">
+        <div class="empty-icon">🗺️</div>
+        <h2>No Code Graph Yet</h2>
+        <p>Run <code>codeatlas scan</code> in your project directory to build the knowledge graph.</p>
+        <pre><code>$ codeatlas scan .
+$ codeatlas serve</code></pre>
+      </div>
+    </main>
+
+    <!-- Right Detail Panel -->
+    <aside class="detail-panel hidden" id="detailPanel">
+      <button class="detail-close" id="detailClose">✕</button>
+      
+      <div id="detailContent">
+        <h2 id="detailName">-</h2>
+        <div class="detail-meta">
+          <span class="badge" id="detailKind">-</span>
+          <span class="badge" id="detailLayer">-</span>
+          <span id="detailFile">-</span>
+        </div>
+        
+        <div class="detail-section">
+          <h4>📝 AI Explanation</h4>
+          <p id="detailExplanation" class="placeholder">Click "Explain" to generate AI explanation</p>
+          <button id="btnExplain" class="btn-primary">Explain with AI</button>
+        </div>
+
+        <div class="detail-section">
+          <h4>📊 Metrics</h4>
+          <div class="metrics">
+            <div>Complexity: <strong id="detailComplexity">-</strong></div>
+            <div>Callers: <strong id="detailCallers">-</strong></div>
+            <div>Callees: <strong id="detailCallees">-</strong></div>
+          </div>
+        </div>
+
+        <div class="detail-section">
+          <h4>🔗 Relationships</h4>
+          <div id="detailRelationships"></div>
+        </div>
+
+        <div class="detail-section">
+          <h4>💻 Source Code</h4>
+          <pre><code id="detailSource" class="source-code"></code></pre>
+        </div>
+
+        <div class="detail-actions">
+          <button id="btnImpact">Analyze Impact</button>
+          <button id="btnCallers">Show Callers</button>
+          <button id="btnCopyPath">Copy Path</button>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <script type="module" src="src/app.ts"></script>
+</body>
+</html>

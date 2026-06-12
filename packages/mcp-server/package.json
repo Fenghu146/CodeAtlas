@@ -1,0 +1,31 @@
+{
+  "name": "@codeatlas/mcp-server",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "CodeAtlas MCP Server - Expose code graph to AI tools via MCP protocol",
+  "main": "dist/server.js",
+  "bin": {
+    "codeatlas-mcp": "dist/server.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/server.js",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@codeatlas/core": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0"
+  }
+}

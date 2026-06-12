@@ -1,0 +1,31 @@
+{
+  "name": "codeatlas",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Turn any codebase into an interactive knowledge graph",
+  "scripts": {
+    "build": "pnpm -r run build",
+    "dev": "pnpm -r run --parallel dev",
+    "test": "pnpm -r run --parallel test",
+    "clean": "pnpm -r run --parallel clean"
+  },
+  "keywords": [
+    "code-analysis",
+    "knowledge-graph",
+    "tree-sitter",
+    "mcp",
+    "visualization"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "packageManager": "pnpm@9.0.0",
+  "devDependencies": {
+    "vitest": "^4.1.8"
+  },
+  "dependencies": {
+    "chokidar": "^4.0.0",
+    "ws": "^8.21.0"
+  }
+}
