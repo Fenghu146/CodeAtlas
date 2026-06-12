@@ -14,7 +14,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import { SQLiteStore, ProjectScanner, ImpactAnalyzer, FoamExporter, ModuleExplainer, FileWatcher, loadConfig, getAIConfig, DepAnalyzer, ReviewAnalyzer, GuardAnalyzer, ContextBuilder, PathFinder, AgentRuntime, RefactorEngine, GraphExporter, DiffAnalyzer, TraceReader, TraceAnalyzer, TraceAgent, EmbeddedAnalyzer, BuildAnalyzer, VectorStore, HybridSearch, createEmbeddingGenerator, AgentOrchestrator } from '@codeatlas/core';
+import { SQLiteStore, ProjectScanner, ImpactAnalyzer, FoamExporter, ModuleExplainer, FileWatcher, loadConfig, getAIConfig, DepAnalyzer, ReviewAnalyzer, GuardAnalyzer, ContextBuilder, PathFinder, AgentRuntime, RefactorEngine, GraphExporter, DiffAnalyzer, TraceReader, TraceAnalyzer, TraceAgent, EmbeddedAnalyzer, BuildAnalyzer, EmbeddedLinuxAnalyzer, VectorStore, HybridSearch, createEmbeddingGenerator, AgentOrchestrator, GraphCopilot } from '@codeatlas/core';
 import path from 'path';
 import fs from 'fs';
 
@@ -57,10 +57,12 @@ let store: SQLiteStore;
 let scanner: ProjectScanner;
 let watcher: FileWatcher | null = null;
 let sharedExplainer: ModuleExplainer | null = null;
+let sharedCopilot: GraphCopilot | null = null;
 
 async function initStore() {
   store = await SQLiteStore.create({ dbPath: path.join(dbDir, 'db.sqlite') });
   scanner = new ProjectScanner(store);
+  sharedCopilot = new GraphCopilot(store, projectPath);
 
   // Initialize shared LLM client (connection pool)
   const config = loadConfig(projectPath);
@@ -192,8 +194,9 @@ server.tool(
     path: z.string().optional().describe('Project path (defaults to current directory)'),
     full: z.boolean().optional().default(false).describe('Force full rescan (ignore incremental detection)'),
     exclude: z.array(z.string()).optional().describe('Additional directories to exclude (e.g., ["lib", "vendor"])'),
+    profile: z.enum(['default', 'embedded-mcu', 'embedded-linux']).optional().describe('Scan profile: embedded-linux includes Kconfig, DTS, Yocto, systemd files.'),
   },
-  async ({ path: scanPath, full, exclude }) => {
+  async ({ path: scanPath, full, exclude, profile }) => {
     const target = scanPath ? path.resolve(scanPath) : projectPath;
     try {
       const result = await scanner.scan({

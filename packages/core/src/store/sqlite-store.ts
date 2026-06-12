@@ -282,11 +282,12 @@ export class SQLiteStore {
         LIMIT ?
       `, [query, limit]);
     } catch {
-      // Fallback to LIKE
+      // Fallback to LIKE (also used for empty/broad queries)
       const like = `%${query}%`;
       rows = this.queryAll(`
         SELECT * FROM symbols
         WHERE name LIKE ? OR doc_comment LIKE ?
+        ORDER BY name
         LIMIT ?
       `, [like, like, limit]);
     }

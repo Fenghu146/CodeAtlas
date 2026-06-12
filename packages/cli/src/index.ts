@@ -38,6 +38,8 @@ program
   .option('-f, --full', 'Force full rescan')
   .option('--ai', 'Enable AI analysis (requires LLM config)')
   .option('-e, --exclude <dirs>', 'Comma-separated directories to exclude (e.g., "lib,vendor,.pio")')
+  .option('--report', 'After scan, auto-generate a code health report (hotspots + refactor suggestions)')
+  .option('--profile <type>', 'Scan profile: default, embedded-mcu, embedded-linux')
   .action(async (scanPath, options) => {
     // Dynamic import to keep startup fast
     const { scanCommand } = await import('./commands/scan.js');
@@ -110,9 +112,12 @@ program
 program
   .command('layers')
   .description('Show architectural layer classification')
-  .action(async () => {
+  .option('--by-file', 'Show compact file-level aggregation table (like cloc)')
+  .option('--sort <field>', 'Sort files by (syms|complexity|name)', 'syms')
+  .option('-n, --limit <number>', 'Max files to show', '25')
+  .action(async (options) => {
     const { layersCommand } = await import('./commands/layers.js');
-    await layersCommand();
+    await layersCommand(options);
   });
 
 // ========================
@@ -274,9 +279,10 @@ program
 // ========================
 program
   .command('embedded <subcommand>')
-  .description('Embedded systems analysis: build, tasks, interrupts, hardware')
+  .description('Embedded systems analysis: build, tasks, interrupts, hardware, linux, drivers, devicetree, kconfig, interfaces')
   .option('-f, --format <format>', 'Output format (text|json)', 'text')
   .option('-p, --project <path>', 'Project path (default: cwd)')
+  .option('--profile <type>', 'Analysis profile: auto (default), mcu, linux')
   .action(async (subcommand, options) => {
     const { embeddedCommand } = await import('./commands/embedded.js');
     await embeddedCommand(subcommand, options);
@@ -359,9 +365,12 @@ program
 program
   .command('ask <question>')
   .description('Ask natural language question about the code')
-  .action(async (question) => {
+  .option('-f, --format <format>', 'Output format (text|json)', 'text')
+  .option('-m, --mode <mode>', 'Analysis depth (quick|deep)', 'quick')
+  .option('-s, --session <id>', 'Session ID for multi-turn memory')
+  .action(async (question, options) => {
     const { askCommand } = await import('./commands/ask.js');
-    await askCommand(question);
+    await askCommand(question, options);
   });
 
 // ========================

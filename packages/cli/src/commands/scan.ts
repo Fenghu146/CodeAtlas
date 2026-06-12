@@ -3,14 +3,15 @@
 // ============================================================
 
 import path from 'path';
-import { ProjectScanner, SQLiteStore, loadConfig, getAIConfig } from '@codeatlas/core';
+import { ProjectScanner, SQLiteStore, loadConfig, getAIConfig, SmellDetector } from '@codeatlas/core';
 
-export async function scanCommand(projectPath: string, options: { full?: boolean; ai?: boolean; exclude?: string[] }) {
+export async function scanCommand(projectPath: string, options: { full?: boolean; ai?: boolean; report?: boolean; exclude?: string[]; profile?: string }) {
   const resolvedPath = path.resolve(projectPath);
 
   console.log(`\n🗺️  CodeAtlas Scanner`);
   console.log(`📁 Project: ${resolvedPath}`);
   console.log(`🔄 Mode: ${options.full ? 'Full scan' : 'Incremental'}`);
+  if (options.profile) console.log(`🎯 Profile: ${options.profile}`);
   if (options.exclude && options.exclude.length > 0) {
     console.log(`🚫 Excluding: ${options.exclude.join(', ')}`);
   }
@@ -59,10 +60,90 @@ export async function scanCommand(projectPath: string, options: { full?: boolean
     console.log(`   🔗 Relationships: ${result.relationshipsFound}`);
     console.log(`   🌐 Languages: ${result.languages.join(', ')}`);
     console.log(`   💾 Database: ${path.join(resolvedPath, '.codeatlas', 'db.sqlite')}\n`);
+
+    // Auto-generate report
+    if (options.report) {
+      await generateReport(store, resolvedPath);
+    }
   } catch (err) {
     console.error('❌ Scan failed:', err);
     process.exit(1);
   } finally {
     store.close();
   }
+}
+
+/**
+ * Generate a code health report after scan: hotspots + refactor suggestions.
+ */
+async function generateReport(store: SQLiteStore, projectPath: string) {
+  console.log('═'.repeat(50));
+  console.log('📋 Code Health Report');
+  console.log('═'.repeat(50));
+
+  // ── Hotspots ──
+  console.log('\n🔥 Hotspots');
+  console.log('─'.repeat(40));
+
+  const allSymbols = store.searchSymbols('', { limit: 10000 });
+  const symbolIds = allSymbols.map(s => s.id);
+  const callerCounts = store.getCallerCounts(symbolIds);
+  const calleeCounts = store.getCalleeCounts(symbolIds);
+
+  const hotspots: Array<{ name: string; kind: string; file: string; line: number; reason: string; score: number }> = [];
+
+  for (const symbol of allSymbols) {
+    let score = 0;
+    const reasons: string[] = [];
+
+    const callerCount = callerCounts.get(symbol.id) ?? 0;
+    if (callerCount > 5) { score += callerCount; reasons.push(`${callerCount} callers`); }
+
+    const calleeCount = calleeCounts.get(symbol.id) ?? 0;
+    if (calleeCount > 5) { score += calleeCount; reasons.push(`${calleeCount} callees`); }
+
+    if (symbol.sourceCode) {
+      const lines = symbol.sourceCode.split('\n').length;
+      if (lines > 50) { score += Math.floor(lines / 10); reasons.push(`${lines} lines`); }
+    }
+
+    if (score > 0) {
+      hotspots.push({ name: symbol.name, kind: symbol.kind, file: symbol.filePath, line: symbol.startLine, reason: reasons.join(', '), score });
+    }
+  }
+
+  hotspots.sort((a, b) => b.score - a.score);
+
+  if (hotspots.length === 0) {
+    console.log('  ✅ No hotspots found. Codebase looks healthy!');
+  } else {
+    for (const h of hotspots.slice(0, 10)) {
+      console.log(`  🔶 ${h.name} (${h.kind}) @ ${h.file}:${h.line}`);
+      console.log(`     ${h.reason} [score: ${h.score}]`);
+    }
+  }
+
+  // ── Code Smells (Refactor) ──
+  console.log('\n🔍 Code Smells');
+  console.log('─'.repeat(40));
+
+  const smellDetector = new SmellDetector(store);
+  const smells = smellDetector.detect();
+
+  if (smells.length === 0) {
+    console.log('  ✅ No code smells detected.');
+  } else {
+    for (const smell of smells.slice(0, 10)) {
+      const icon = smell.severity === 'error' ? '🔴' : smell.severity === 'warning' ? '🟡' : '🔵';
+      console.log(`  ${icon} [${smell.type}] ${smell.description}`);
+      console.log(`     💡 ${smell.suggestion}`);
+    }
+    if (smells.length > 10) {
+      console.log(`  ... and ${smells.length - 10} more smells`);
+    }
+  }
+
+  console.log(`\n${'═'.repeat(50)}`);
+  console.log(`📊 Report: ${hotspots.length} hotspots, ${smells.length} code smells`);
+  console.log();
 }

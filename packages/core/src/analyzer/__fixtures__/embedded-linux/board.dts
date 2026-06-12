@@ -1,0 +1,31 @@
+/dts-v1/;
+
+/ {
+	model = "Foo Device Board";
+	compatible = "vendor,foo-board", "vendor,foo-soc";
+
+	chosen {
+		bootargs = "console=ttyS0,115200";
+	};
+
+	uart0: serial@1c28000 {
+		compatible = "vendor,foo-uart";
+		reg = <0x01c28000 0x400>;
+		interrupts = <0 10 4>;
+		clocks = <&ccu 20>;
+		status = "okay";
+	};
+
+	i2c0: i2c@1c2b000 {
+		compatible = "vendor,foo-i2c";
+		reg = <0x01c2b000 0x400>;
+		interrupts = <0 11 4>;
+		status = "okay";
+	};
+
+	spi0: spi@1c2c000 {
+		compatible = "vendor,foo-spi";
+		reg = <0x01c2c000 0x400>;
+		status = "disabled";
+	};
+};

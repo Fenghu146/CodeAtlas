@@ -61,7 +61,7 @@ const LAYER_RULES: Record<Layer, LayerRule[]> = {
     // Embedded UI patterns (LVGL, etc.)
     { kind: 'naming', patterns: [
       'ui_', '_ui', 'gui_', '_gui', 'display_', 'screen_',
-      'lv_', '_lv', 'widget', 'button', 'label', 'menu',
+      'lv_', '_lv', 'widget', 'button', 'menu',
       'draw', 'render', 'paint', 'canvas',
     ], weight: 3 },
     { kind: 'path', patterns: [
@@ -227,8 +227,15 @@ export class LayerClassifier {
       case 'path':
         return rule.patterns.some(p => picomatch.isMatch(symbol.filePath, p));
 
-      case 'naming':
+      case 'naming': {
+        // Skip framework type prefixes on variables and type aliases
+        // (e.g. lv_obj_t, lv_color_t, ui_telemetry_t) — they're type
+        // declarations, not actual interface constructs
+        if ((symbol.kind === 'variable' || symbol.kind === 'type') && this.isFrameworkTypeName(rule, symbol.name)) {
+          return false;
+        }
         return rule.patterns.some(p => symbol.name.includes(p));
+      }
 
       case 'import':
         // Check if the symbol's file imports from these packages
@@ -245,6 +252,23 @@ export class LayerClassifier {
       default:
         return false;
     }
+  }
+
+  /** Known framework type prefixes — variables matching these are not real interfaces */
+  private readonly FRAMEWORK_TYPE_PREFIXES = ['lv_', '_lv', 'ui_', 'gui_', 'screen_'];
+
+  /** Check if a naming-rule match is really a framework type declaration */
+  private isFrameworkTypeName(rule: LayerRule, name: string): boolean {
+    // Only filter framework types for the interface layer
+    for (const prefix of this.FRAMEWORK_TYPE_PREFIXES) {
+      if (name.includes(prefix)) {
+        // C type naming convention: foo_t → framework type
+        if (name.endsWith('_t')) return true;
+        // Direct framework prefix: lv_obj, ui_page → treat as framework
+        return true;
+      }
+    }
+    return false;
   }
 
   /** Allow custom rules to be added/overridden */

@@ -1,0 +1,5 @@
+config BR2_PACKAGE_FOO_SERVICE
+	bool "foo-service"
+	depends on BR2_TOOLCHAIN_HAS_THREADS
+	help
+	  Foo service package for Buildroot

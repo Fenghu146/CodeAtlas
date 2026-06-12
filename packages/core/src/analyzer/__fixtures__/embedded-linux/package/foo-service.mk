@@ -1,0 +1,4 @@
+FOO_SERVICE_VERSION = 1.2.3
+FOO_SERVICE_SITE = https://example.com/foo-service
+FOO_SERVICE_LICENSE = GPL-2.0
+FOO_SERVICE_DEPENDENCIES = libfoo libbar

@@ -59,9 +59,11 @@ export type { HotPath, FailurePattern, ExecutionDiff, TraceAnalysisResult } from
 export { TraceAgent } from './analyzer/trace-agent.js';
 export type { TraceAgentTask, TraceAgentResult } from './analyzer/trace-agent.js';
 export { BuildAnalyzer } from './analyzer/build-analyzer.js';
-export type { BuildConfig, LibraryInfo } from './analyzer/build-analyzer.js';
+export type { BuildConfig, LibraryInfo, LinuxBuildMetadata } from './analyzer/build-analyzer.js';
 export { EmbeddedAnalyzer } from './analyzer/embedded-analyzer.js';
-export type { RTOSTask, InterruptHandler, HardwareAccess, EmbeddedAnalysisResult } from './analyzer/embedded-analyzer.js';
+export type { RTOSTask, InterruptHandler, HardwareAccess, EmbeddedAnalysisResult, EmbeddedAnalyzerOptions } from './analyzer/embedded-analyzer.js';
+export { EmbeddedLinuxAnalyzer } from './analyzer/embedded-linux-analyzer.js';
+export type { EmbeddedLinuxAnalysis, KbuildInfo, KbuildTargetInfo, KconfigInfo, KconfigOptionInfo, DeviceTreeInfo, DeviceTreeNodeInfo, LinuxDriverInfo, KernelModuleInfo, LinuxUserInterfaceInfo, YoctoInfo, YoctoRecipeInfo, BuildrootInfo, BuildrootPackageInfo, LinuxServiceInfo, EmbeddedLinuxFinding } from './analyzer/embedded-linux-analyzer.js';
 export { HashEmbeddingGenerator, OpenAIEmbeddingGenerator, OllamaEmbeddingGenerator, createEmbeddingGenerator } from './search/embedding.js';
 export type { EmbeddingGenerator } from './search/embedding.js';
 export { VectorStore } from './search/vector-store.js';
@@ -70,6 +72,13 @@ export { HybridSearch } from './search/hybrid-search.js';
 export type { HybridResult, HybridSearchOptions } from './search/hybrid-search.js';
 export { AgentOrchestrator } from './agent/orchestrator.js';
 export type { TaskDAG, OrchestrationResult } from './agent/orchestrator.js';
+
+export { GraphCopilot } from './copilot/graph-copilot.js';
+export type { AskResult, AskOptions } from './copilot/graph-copilot.js';
+export { recognizeIntent, extractTargetSymbols } from './copilot/intents.js';
+export type { Intent, IntentType } from './copilot/intents.js';
+export { SessionManager } from './copilot/session.js';
+export type { TurnRecord, SessionContext } from './copilot/session.js';
 
 export { exportTeamData, importTeamData, loadTeamData, saveTeamData, summarizeTeamData } from './export/team-export.js';
 export type { TeamData, AnnotationData, ExportOptions } from './export/team-export.js';

@@ -4,10 +4,11 @@
 
 import path from 'path';
 import { SQLiteStore, EmbeddedAnalyzer, BuildAnalyzer } from '@codeatlas/core';
+import { EmbeddedLinuxAnalyzer } from '@codeatlas/core';
 
 export async function embeddedCommand(
   subcommand: string,
-  options: { format?: string; project?: string },
+  options: { format?: string; project?: string; profile?: string },
 ) {
   const projectPath = path.resolve(options.project || process.cwd());
   const store = await SQLiteStore.create({
@@ -34,17 +35,34 @@ export async function embeddedCommand(
       case 'exclude':
         await showExcludePatterns(projectPath, options);
         break;
+      // New embedded Linux subcommands
+      case 'linux':
+        await showLinuxTotal(projectPath, options);
+        break;
+      case 'drivers':
+        await showLinuxDrivers(projectPath, options);
+        break;
+      case 'devicetree':
+        await showLinuxDeviceTree(projectPath, options);
+        break;
+      case 'kconfig':
+        await showLinuxKconfig(projectPath, options);
+        break;
+      case 'interfaces':
+        await showLinuxInterfaces(projectPath, options);
+        break;
       default:
         console.log(`Unknown subcommand: ${subcommand}`);
-        console.log('Available: analyze, build, tasks, interrupts, hardware, exclude');
+        console.log('Available: analyze, build, tasks, interrupts, hardware, exclude, linux, drivers, devicetree, kconfig, interfaces');
     }
   } finally {
     store.close();
   }
 }
 
-async function analyzeEmbedded(store: SQLiteStore, projectPath: string, options: { format?: string }) {
-  const analyzer = new EmbeddedAnalyzer(store, projectPath);
+async function analyzeEmbedded(store: SQLiteStore, projectPath: string, options: { format?: string; profile?: string }) {
+  const profile = (options.profile || 'auto') as 'auto' | 'mcu' | 'linux';
+  const analyzer = new EmbeddedAnalyzer(store, projectPath, { profile });
   const result = analyzer.analyze();
 
   if (options.format === 'json') {
@@ -86,10 +104,21 @@ async function showBuildConfig(projectPath: string, options: { format?: string }
       console.log(`   ${flag}`);
     }
   }
+
+  // Linux build metadata
+  if (config.linux) {
+    console.log(`\n🐧 Linux Build Metadata:`);
+    console.log(`   Family: ${config.linux.family}`);
+    if (config.linux.targets?.length) console.log(`   Kbuild targets: ${config.linux.targets.length}`);
+    if (config.linux.configs?.length) console.log(`   Kconfig options: ${config.linux.configs.length}`);
+    if (config.linux.recipes?.length) console.log(`   Yocto recipes: ${config.linux.recipes.length}`);
+    if (config.linux.packages?.length) console.log(`   Buildroot packages: ${config.linux.packages.length}`);
+  }
 }
 
-async function showTasks(store: SQLiteStore, projectPath: string, options: { format?: string }) {
-  const analyzer = new EmbeddedAnalyzer(store, projectPath);
+async function showTasks(store: SQLiteStore, projectPath: string, options: { format?: string; profile?: string }) {
+  const profile = (options.profile || 'auto') as 'auto' | 'mcu' | 'linux';
+  const analyzer = new EmbeddedAnalyzer(store, projectPath, { profile });
   const result = analyzer.analyze();
 
   if (result.tasks.length === 0) {
@@ -110,8 +139,9 @@ async function showTasks(store: SQLiteStore, projectPath: string, options: { for
   }
 }
 
-async function showInterrupts(store: SQLiteStore, projectPath: string, options: { format?: string }) {
-  const analyzer = new EmbeddedAnalyzer(store, projectPath);
+async function showInterrupts(store: SQLiteStore, projectPath: string, options: { format?: string; profile?: string }) {
+  const profile = (options.profile || 'auto') as 'auto' | 'mcu' | 'linux';
+  const analyzer = new EmbeddedAnalyzer(store, projectPath, { profile });
   const result = analyzer.analyze();
 
   if (result.interrupts.length === 0) {
@@ -132,8 +162,9 @@ async function showInterrupts(store: SQLiteStore, projectPath: string, options: 
   }
 }
 
-async function showHardware(store: SQLiteStore, projectPath: string, options: { format?: string }) {
-  const analyzer = new EmbeddedAnalyzer(store, projectPath);
+async function showHardware(store: SQLiteStore, projectPath: string, options: { format?: string; profile?: string }) {
+  const profile = (options.profile || 'auto') as 'auto' | 'mcu' | 'linux';
+  const analyzer = new EmbeddedAnalyzer(store, projectPath, { profile });
   const result = analyzer.analyze();
 
   if (result.hardwareAccess.length === 0) {
@@ -177,5 +208,117 @@ async function showExcludePatterns(projectPath: string, options: { format?: stri
   console.log(`\n🚫 Recommended Exclusion Patterns (${patterns.length}):\n`);
   for (const pattern of patterns) {
     console.log(`  ${pattern}`);
+  }
+}
+
+// ============================================================
+// New: Embedded Linux subcommands
+// ============================================================
+
+async function getLinuxResult(projectPath: string, options: { format?: string; profile?: string }): Promise<import('@codeatlas/core').EmbeddedLinuxAnalysis> {
+  const analyzer = new EmbeddedLinuxAnalyzer(projectPath);
+  return analyzer.analyze();
+}
+
+async function showLinuxTotal(projectPath: string, options: { format?: string; profile?: string }) {
+  const result = await getLinuxResult(projectPath, options);
+  if (options.format === 'json') {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+  console.log(`\n${result.summary}`);
+}
+
+async function showLinuxDrivers(projectPath: string, options: { format?: string; profile?: string }) {
+  const result = await getLinuxResult(projectPath, options);
+  if (options.format === 'json') {
+    console.log(JSON.stringify({ kernelModules: result.kernelModules, drivers: result.drivers }, null, 2));
+    return;
+  }
+  console.log(`\n🐧 Embedded Linux Drivers\n${'═'.repeat(40)}`);
+  console.log(`\nKernel Modules (${result.kernelModules.length}):`);
+  for (const mod of result.kernelModules.slice(0, 20)) {
+    console.log(`  - ${mod.name}`);
+    if (mod.license) console.log(`    License: ${mod.license}`);
+    if (mod.author) console.log(`    Author: ${mod.author}`);
+    if (mod.init) console.log(`    Init: ${mod.init}`);
+    if (mod.aliases.length) console.log(`    Aliases: ${mod.aliases.join(', ')}`);
+    console.log(`    File: ${mod.file}:${mod.line}`);
+  }
+  console.log(`\nDrivers by bus (${result.drivers.length}):`);
+  for (const driver of result.drivers) {
+    console.log(`  - ${driver.name} [${driver.bus}] @ ${driver.file}:${driver.line}`);
+    if (driver.probe) console.log(`    Probe: ${driver.probe}`);
+    if (driver.remove) console.log(`    Remove: ${driver.remove}`);
+    if (driver.compatibles.length) console.log(`    Compatible: ${driver.compatibles.join(', ')}`);
+    if (driver.matchedDeviceTreeNodes.length) console.log(`    DTS nodes: ${driver.matchedDeviceTreeNodes.join(', ')}`);
+  }
+}
+
+async function showLinuxDeviceTree(projectPath: string, options: { format?: string; profile?: string }) {
+  const result = await getLinuxResult(projectPath, options);
+  if (options.format === 'json') {
+    console.log(JSON.stringify(result.deviceTree, null, 2));
+    return;
+  }
+  console.log(`\n🐧 Device Tree\n${'═'.repeat(40)}`);
+  console.log(`\nNodes (${result.deviceTree.nodes.length}):`);
+  for (const node of result.deviceTree.nodes) {
+    const label = node.label ? ` [${node.label}]` : '';
+    const st = node.status ? ` status=${node.status}` : '';
+    console.log(`  - ${node.name}${label}${st}`);
+    if (node.compatible.length) console.log(`    Compatible: ${node.compatible.join(', ')}`);
+    if (node.reg.length) console.log(`    Reg: ${node.reg.join(', ')}`);
+    if (node.interrupts.length) console.log(`    Interrupts: ${node.interrupts.join(', ')}`);
+    if (node.matchedDrivers.length) console.log(`    Matched drivers: ${node.matchedDrivers.join(', ')}`);
+    console.log(`    File: ${node.file}:${node.line}`);
+  }
+  if (result.deviceTree.unmatchedCompatibles.length > 0) {
+    console.log(`\n⚠️ Unmatched compatibles (${result.deviceTree.unmatchedCompatibles.length}):`);
+    for (const c of result.deviceTree.unmatchedCompatibles.slice(0, 10)) {
+      console.log(`  - ${c}`);
+    }
+  }
+}
+
+async function showLinuxKconfig(projectPath: string, options: { format?: string; profile?: string }) {
+  const result = await getLinuxResult(projectPath, options);
+  if (options.format === 'json') {
+    console.log(JSON.stringify(result.kconfig, null, 2));
+    return;
+  }
+  console.log(`\n🐧 Kconfig Options\n${'═'.repeat(40)}`);
+  for (const opt of result.kconfig.options) {
+    const enabled = opt.enabled ? ` [${opt.enabled}]` : '';
+    console.log(`  - ${opt.name} (${opt.type ?? 'unknown'})${enabled}`);
+    if (opt.prompt) console.log(`    Prompt: ${opt.prompt}`);
+    if (opt.dependsOn.length) console.log(`    Depends on: ${opt.dependsOn.join(', ')}`);
+    if (opt.selects.length) console.log(`    Selects: ${opt.selects.join(', ')}`);
+    if (opt.defaults.length) console.log(`    Defaults: ${opt.defaults.join(', ')}`);
+    console.log(`    File: ${opt.file}:${opt.line}`);
+  }
+}
+
+async function showLinuxInterfaces(projectPath: string, options: { format?: string; profile?: string }) {
+  const result = await getLinuxResult(projectPath, options);
+  if (options.format === 'json') {
+    console.log(JSON.stringify(result.interfaces, null, 2));
+    return;
+  }
+  console.log(`\n🐧 Userspace Interfaces\n${'═'.repeat(40)}`);
+  if (result.interfaces.length === 0) {
+    console.log('\n❌ No userspace interfaces detected');
+    return;
+  }
+  const byKind = new Map<string, typeof result.interfaces>();
+  for (const iface of result.interfaces) {
+    if (!byKind.has(iface.kind)) byKind.set(iface.kind, []);
+    byKind.get(iface.kind)!.push(iface);
+  }
+  for (const [kind, items] of byKind) {
+    console.log(`\n${kind} (${items.length}):`);
+    for (const item of items.slice(0, 10)) {
+      console.log(`  - ${item.name} @ ${item.file}:${item.line}`);
+    }
   }
 }

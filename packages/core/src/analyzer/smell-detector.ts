@@ -91,7 +91,7 @@ export class SmellDetector {
    */
   private detectGodClass(): CodeSmell[] {
     const smells: CodeSmell[] = [];
-    const classes = this.store.searchSymbols('', { kind: 'class', limit: 500 });
+    const classes = this.store.searchSymbols('', { kind: 'class', limit: 10000 });
 
     for (const cls of classes) {
       // Count methods in this class
@@ -121,8 +121,8 @@ export class SmellDetector {
    */
   private detectFeatureEnvy(): CodeSmell[] {
     const smells: CodeSmell[] = [];
-    const functions = this.store.searchSymbols('', { kind: 'function', limit: 200 });
-    const methods = this.store.searchSymbols('', { kind: 'method', limit: 500 });
+    const functions = this.store.searchSymbols('', { kind: 'function', limit: 10000 });
+    const methods = this.store.searchSymbols('', { kind: 'method', limit: 10000 });
     const allFunctions = [...functions, ...methods];
 
     for (const func of allFunctions) {
@@ -166,7 +166,7 @@ export class SmellDetector {
    */
   private detectShotgunSurgery(): CodeSmell[] {
     const smells: CodeSmell[] = [];
-    const allSymbols = this.store.searchSymbols('', { limit: 500 });
+    const allSymbols = this.store.searchSymbols('', { limit: 10000 });
 
     for (const symbol of allSymbols) {
       const callers = this.store.getCallers(symbol.id);
@@ -195,8 +195,8 @@ export class SmellDetector {
   private detectDataClumps(): CodeSmell[] {
     // Simplified: detect functions with > 5 parameters as a proxy
     const smells: CodeSmell[] = [];
-    const functions = this.store.searchSymbols('', { kind: 'function', limit: 200 });
-    const methods = this.store.searchSymbols('', { kind: 'method', limit: 500 });
+    const functions = this.store.searchSymbols('', { kind: 'function', limit: 10000 });
+    const methods = this.store.searchSymbols('', { kind: 'method', limit: 10000 });
 
     for (const func of [...functions, ...methods]) {
       if (!func.sourceCode) continue;
@@ -263,7 +263,7 @@ export class SmellDetector {
    */
   private detectHighCoupling(): CodeSmell[] {
     const smells: CodeSmell[] = [];
-    const allSymbols = this.store.searchSymbols('', { limit: 500 });
+    const allSymbols = this.store.searchSymbols('', { limit: 10000 });
 
     for (const symbol of allSymbols) {
       const callees = this.store.getCallees(symbol.id);

@@ -192,17 +192,40 @@ export class DepAnalyzer {
       }
     }
 
+    // For C/C++ projects, scan source files for #include directives
+    // (symbol-level sourceCode only stores the declaration line, not file-level includes)
+    try {
+      const cppIncludes = this.scanCppIncludes();
+      for (const inc of cppIncludes) {
+        importedPackages.add(inc);
+      }
+    } catch { /* ignore */ }
+
     // Find unused (declared but not imported)
     const unused = declared.filter(dep => {
       const normalizedDep = dep.replace(/^@[^/]+\//, '');
-      return !importedPackages.has(dep) &&
-             !importedPackages.has(normalizedDep) &&
+      // For PlatformIO-style deps (owner/name), also check just the short name
+      const shortName = dep.includes('/') ? dep.split('/')[1] : null;
+      const shortNameCleaned = shortName ? shortName.split('@')[0].trim() : null;
+      return !this.isDepInImports(importedPackages, dep) &&
+             !this.isDepInImports(importedPackages, normalizedDep) &&
+             !(shortNameCleaned && this.isDepInImports(importedPackages, shortNameCleaned)) &&
              !this.isDevDependency(dep);
     });
 
     // Find unlisted (imported but not declared)
     const unlisted = Array.from(importedPackages).filter(pkg => {
-      return !declared.some(dep => dep === pkg || pkg.startsWith(dep + '/'));
+      // Skip project-internal includes
+      if (this.isLocalProjectHeader(pkg)) return false;
+      // Skip framework/auto-installed transitive deps
+      if (this.isFrameworkHeader(pkg)) return false;
+      // Skip common non-package artifacts
+      if (['service', 'driver', 'api', 'hardware', 'font', 'canvas',
+           'gfxfont', 'math', 'float', 'avr', 'pgmspace', 'sys',
+           'platform', 'REG', 'VNC', 'VNC_config', 'databus', 'display',
+           'esp32c3', 'esp32s3',
+          ].includes(pkg)) return false;
+      return !declared.some(dep => this.isDepMatch(dep, pkg));
     });
 
     return { unused, unlisted, declared };
@@ -272,7 +295,39 @@ export class DepAnalyzer {
       } catch { /* ignore */ }
     }
 
+    // platformio.ini (embedded C/C++ projects)
+    const platformioPath = path.join(this.projectPath, 'platformio.ini');
+    if (fs.existsSync(platformioPath)) {
+      try {
+        const content = fs.readFileSync(platformioPath, 'utf-8');
+        deps.push(...this.parsePlatformioDeps(content));
+      } catch { /* ignore */ }
+    }
+
     return deps;
+  }
+
+  /** Parse PlatformIO lib_deps from platformio.ini */
+  private parsePlatformioDeps(content: string): string[] {
+    const deps: string[] = [];
+    // Match lib_deps blocks inside [env:*] sections
+    // Format: lib_deps = owner/name@version (one per line)
+    const envSections = content.match(/\[env:.*?\](?:[^[]|\[(?!env:))*/gs);
+    if (envSections) {
+      for (const section of envSections) {
+        const libMatch = section.match(/^lib_deps\s*=\s*([\s\S]*?)(?:\n\[|\n$)/m);
+        if (libMatch) {
+          const libLines = libMatch[1].split('\n').filter(l => l.trim());
+          for (const line of libLines) {
+            const trimmed = line.trim();
+            // Handle: owner/name@version or name@version or just name
+            const libName = trimmed.split('@')[0].split('//')[0].trim();
+            if (libName) deps.push(libName);
+          }
+        }
+      }
+    }
+    return [...new Set(deps)];
   }
 
   private isDevDependency(dep: string): boolean {
@@ -300,6 +355,12 @@ export class DepAnalyzer {
         return `${pkgPart}/${parts[nmIdx + 2]}`;
       }
       return pkgPart || null;
+    }
+
+    // Check if it's in PlatformIO library directory (.pio/libdeps/<env>/)
+    const pioIdx = parts.indexOf('libdeps');
+    if (pioIdx !== -1 && parts[pioIdx - 1] === '.pio') {
+      return parts[pioIdx + 2] || null;  // .pio/libdeps/esp32s3/<libname>/...
     }
 
     // For non-node_modules paths, extract relative package
@@ -340,6 +401,39 @@ export class DepAnalyzer {
       }
     }
 
+    // C/C++ includes: #include <library/header.h> or #include "library/header.h"
+    const cppIncludeRegex = /#include\s*[<"]([^>"]+)[>"]/g;
+    while ((match = cppIncludeRegex.exec(sourceCode)) !== null) {
+      const include = match[1];
+      if (!include) continue;
+
+      // Extract the top-level library name from <lib_name/header.h>
+      const parts = include.split('/');
+      if (parts.length >= 2) {
+        packages.push(parts[0]);
+      } else {
+        // Single header like <lvgl.h> — try to strip extension
+        const headerName = parts[0].replace(/\.h(h|pp|xx)?$/, '');
+        // Map known single-header libraries to their package names
+        const knownHeaders: Record<string, string> = {
+          'lvgl': 'lvgl',
+          'ArduinoJson': 'ArduinoJson',
+          'WiFi': 'esp32',
+          'BluetoothSerial': 'esp32',
+          'FS': 'esp32',
+          'SD': 'esp32',
+          'SPI': 'esp32',
+          'Wire': 'esp32',
+          'HTTPClient': 'esp32',
+        };
+        if (knownHeaders[headerName]) {
+          packages.push(knownHeaders[headerName]);
+        } else if (headerName.length > 2) {
+          packages.push(headerName);
+        }
+      }
+    }
+
     return packages;
   }
 
@@ -366,6 +460,171 @@ export class DepAnalyzer {
     return packages;
   }
 
+  /** System/framework header prefixes that are NOT external packages */
+  private readonly SYSTEM_HEADER_PREFIXES = [
+    'esp_', 'freertos', 'driver', 'hal', 'soc', 'sdkconfig',
+    'std', 'string', 'cmath', 'cstd', 'cint', 'cstr',
+    'sys/', 'linux/', 'asm/',
+  ];
+
+  /** Well-known Arduino-ESP32 framework headers (auto-available, not external deps) */
+  private readonly ARDUINO_FRAMEWORK_HEADERS = new Set([
+    'Arduino', 'WiFi', 'BluetoothSerial', 'FS', 'SD',
+    'SPI', 'Wire', 'HTTPClient', 'Update', 'time',
+    'Preferences', 'SD_MMC', 'esp_now', 'BLEAdvertisedDevice',
+    'BLEClient', 'BLEDevice', 'BLEServer', 'BLEUtils', 'BLE2902',
+    'BLEScan', 'BLECharacteristic', 'BLEDescriptor', 'BLEService',
+    'BLESecurity', 'BLEAddress', 'BLEBeacon', 'BLEEddystoneURL',
+    'Print', 'Stream', 'WString', 'String',
+  ]);
+
+  /** Filter out known framework / auto-installed transitive deps from unlisted */
+  private isFrameworkHeader(name: string): boolean {
+    return this.ARDUINO_FRAMEWORK_HEADERS.has(name) ||
+           name.startsWith('Arduino_') ||
+           name.startsWith('Adafruit_') ||
+           name.startsWith('Sensor') ||
+           name.startsWith('XPowers') ||
+           name.startsWith('Powers') ||
+           name === 'esp32' || name === 'esp32s3' || name === 'api' ||
+           name === 'font' || name === 'canvas' || name === 'gfxfont' ||
+           name === 'avr' || name === 'pgmspace' || name === 'sys' ||
+           name === 'float' || name === 'hardware' || name === 'platform' ||
+           name === 'REG' || name === 'databus' || name === 'display' ||
+           name === 'VNC' || name === 'VNC_config' || name === 'driver' ||
+           name === 'lv_demo_benchmark' || name === 'math' ||
+           name === 'JPEGDEC' || name === 'ESP32_JPEG_Library';
+  }
+
+  /** Check if a dependency name appears in the imported packages set */
+  private isDepInImports(importedPackages: Set<string>, dep: string): boolean {
+    // Direct match, or partial match: e.g. "lvgl" matches "lvgl/lvgl"
+    return importedPackages.has(dep) ||
+           [...importedPackages].some(pkg => pkg.includes(dep));
+  }
+
+  /** Check if a declared dependency matches a detected package name */
+  private isDepMatch(declared: string, pkg: string): boolean {
+    if (declared === pkg) return true;
+    if (pkg.startsWith(declared + '/')) return true;
+    // PlatformIO: "owner/name" — check if pkg matches the short name
+    const shortName = declared.includes('/') ? declared.split('/')[1]?.split('@')[0]?.trim() : null;
+    if (shortName && (pkg === shortName || pkg.includes(shortName))) return true;
+    return false;
+  }
+
+  /** Check if a package name looks like a local project header */
+  private isLocalProjectHeader(name: string): boolean {
+    // Project-internal service files: audio, ble_hid, tf_card, etc.
+    const localServices = ['audio', 'ble_hid', 'ble_srv', 'ble_hid',
+      'ota_update', 'wifi_ntp', 'tf_card', 'voice_chat',
+      'activity', 'weather', 'player', 'stopwatch', 'backlight',
+      'watch_faces', 'ui_pages', 'settings_page',
+      'step_counter', 'sleep_tracker', 'motion_intensity',
+      'notif_history', 'quick_panel', 'sensor_task',
+      'fall_detect', 'debug_log', 'ui_styles',
+      'lv_port_indev', 'lv_port_disp',
+    ];
+    return localServices.includes(name);
+  }
+
+  /** Scan C/C++ source files for #include directives (file-level) */
+  private scanCppIncludes(): string[] {
+    const packages: string[] = [];
+    const srcExts = ['.cpp', '.h', '.hpp', '.hh', '.c', '.cc', '.cxx', '.hxx'];
+
+    // Build a set of local headers for filtering (headers that belong to this project)
+    const localHeaders = new Set<string>();
+    const collectLocalHeaders = (dir: string): void => {
+      try {
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        for (const entry of entries) {
+          if (entry.isFile()) {
+            const name = entry.name.toLowerCase();
+            if (name.endsWith('.h') || name.endsWith('.hpp')) {
+              localHeaders.add(entry.name);
+            }
+          }
+        }
+      } catch { /* skip */ }
+    };
+    for (const subDir of ['src', 'lib', 'include']) {
+      const dir = path.join(this.projectPath, subDir);
+      if (fs.existsSync(dir)) collectLocalHeaders(dir);
+    }
+
+    const isSystemHeader = (name: string): boolean =>
+      this.SYSTEM_HEADER_PREFIXES.some(p => name.startsWith(p));
+
+    const SKIP_DIRS = new Set(['.', 'node_modules', '.pio', '.git', '__pycache__',
+      'build', 'dist', '.build', 'target']);
+
+    const collectIncludes = (dir: string): void => {
+      try {
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        for (const entry of entries) {
+          const fullPath = path.join(dir, entry.name);
+          if (entry.isDirectory()) {
+            if (!entry.name.startsWith('.') && !SKIP_DIRS.has(entry.name)) {
+              collectIncludes(fullPath);
+            }
+          } else if (entry.isFile()) {
+            const ext = path.extname(entry.name).toLowerCase();
+            if (srcExts.includes(ext)) {
+              const content = fs.readFileSync(fullPath, 'utf-8');
+              const includeRe = /#include\s*[<"]([^>"]+)[>"]/g;
+              let m: RegExpExecArray | null;
+              while ((m = includeRe.exec(content)) !== null) {
+                const include = m[1];
+                // Skip local project headers (included by name or path)
+                const includeBase = include.split('/').pop() || include;
+                if (localHeaders.has(include) || localHeaders.has(includeBase)) continue;
+
+                const parts = include.split('/');
+                const topLevel = parts[0].replace(/\.h(h|pp|xx)?$/, '');
+                // Skip system/framework headers
+                if (isSystemHeader(topLevel)) continue;
+                // Skip single-dir noise
+                if (topLevel === '.' || topLevel === '..' || topLevel === '') continue;
+
+                if (parts.length >= 2) {
+                  // Only push if it doesn't look like a local relative path
+                  const topDir = parts[0];
+                  if (topDir !== '.' && topDir !== '..' && !localHeaders.has(parts[parts.length - 1])) {
+                    packages.push(topDir);
+                  }
+                } else {
+                  const knownHeaders: Record<string, string> = {
+                    'lvgl': 'lvgl', 'CST816S': 'CST816S',
+                    'ArduinoJson': 'ArduinoJson',
+                    'WiFi': 'esp32', 'BluetoothSerial': 'esp32',
+                    'FS': 'esp32', 'SD': 'esp32',
+                    'SPI': 'esp32', 'Wire': 'esp32',
+                  };
+                  if (knownHeaders[topLevel]) {
+                    packages.push(knownHeaders[topLevel]);
+                  } else if (topLevel.length > 2) {
+                    packages.push(topLevel);
+                  }
+                }
+              }
+            }
+          }
+        }
+      } catch { /* skip unreadable dirs */ }
+    };
+
+    for (const subDir of ['src', 'lib', 'include', 'source']) {
+      const dir = path.join(this.projectPath, subDir);
+      if (fs.existsSync(dir)) collectIncludes(dir);
+    }
+
+    return [...new Set(packages)];
+  }
+
+  /**
+   * Build a human-readable summary of dependency health.
+   */
   private buildSummary(
     circular: CircularDep[],
     unused: string[],

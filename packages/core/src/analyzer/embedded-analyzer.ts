@@ -8,6 +8,7 @@ import fs from 'fs';
 import path from 'path';
 import { SQLiteStore } from '../store/sqlite-store.js';
 import { BuildAnalyzer, type BuildConfig } from './build-analyzer.js';
+import { EmbeddedLinuxAnalyzer, type EmbeddedLinuxAnalysis } from './embedded-linux-analyzer.js';
 import type { Symbol } from '../graph/types.js';
 
 export interface RTOSTask {
@@ -71,8 +72,15 @@ export interface EmbeddedAnalysisResult {
   buildConfig: BuildConfig;
   /** Memory layout (if detectable) */
   memoryLayout?: MemoryLayout;
+  /** Embedded Linux analysis (if detected or requested) */
+  linux?: EmbeddedLinuxAnalysis;
   /** Summary */
   summary: string;
+}
+
+export interface EmbeddedAnalyzerOptions {
+  /** Analysis profile */
+  profile?: 'auto' | 'mcu' | 'linux';
 }
 
 /**
@@ -81,10 +89,12 @@ export interface EmbeddedAnalysisResult {
 export class EmbeddedAnalyzer {
   private store: SQLiteStore;
   private projectPath: string;
+  private options: EmbeddedAnalyzerOptions;
 
-  constructor(store: SQLiteStore, projectPath: string) {
+  constructor(store: SQLiteStore, projectPath: string, options: EmbeddedAnalyzerOptions = {}) {
     this.store = store;
     this.projectPath = projectPath;
+    this.options = options;
   }
 
   /**
@@ -100,8 +110,14 @@ export class EmbeddedAnalyzer {
     const interrupts = this.detectInterrupts();
     const hardwareAccess = this.detectHardwareAccess();
     const memoryLayout = this.detectMemoryLayout();
+    const linuxAnalyzer = new EmbeddedLinuxAnalyzer(projectRoot);
+    const linux = this.options.profile === 'mcu'
+      ? undefined
+      : (this.options.profile === 'linux' || linuxAnalyzer.hasLinuxSignals() || ['kbuild', 'yocto', 'buildroot'].includes(buildConfig.type))
+        ? linuxAnalyzer.analyze()
+        : undefined;
 
-    const summary = this.buildSummary(tasks, interrupts, hardwareAccess, buildConfig);
+    const summary = this.buildSummary(tasks, interrupts, hardwareAccess, buildConfig, linux);
 
     return {
       tasks,
@@ -109,6 +125,7 @@ export class EmbeddedAnalyzer {
       hardwareAccess,
       buildConfig,
       memoryLayout,
+      linux,
       summary,
     };
   }
@@ -345,6 +362,7 @@ export class EmbeddedAnalyzer {
     interrupts: InterruptHandler[],
     hardwareAccess: HardwareAccess[],
     buildConfig: BuildConfig,
+    linux?: EmbeddedLinuxAnalysis,
   ): string {
     const parts: string[] = [];
 
@@ -380,6 +398,20 @@ export class EmbeddedAnalyzer {
       const uniquePeripherals = this.deduplicatePeripherals(hardwareAccess);
       parts.push(`\n🔌 Hardware Peripherals (${uniquePeripherals.length}):`);
       parts.push(`   ${uniquePeripherals.join(', ')}`);
+    }
+
+    // Embedded Linux
+    if (linux) {
+      parts.push(`\n🐧 Embedded Linux:`);
+      parts.push(`   Kbuild targets: ${linux.kbuild.targets.length}`);
+      parts.push(`   Kconfig options: ${linux.kconfig.options.length}`);
+      parts.push(`   Device-tree nodes: ${linux.deviceTree.nodes.length}`);
+      parts.push(`   Drivers: ${linux.drivers.length}`);
+      parts.push(`   Userspace interfaces: ${linux.interfaces.length}`);
+      if (linux.yocto.recipes.length > 0) parts.push(`   Yocto recipes: ${linux.yocto.recipes.length}`);
+      if (linux.buildroot.packages.length > 0) parts.push(`   Buildroot packages: ${linux.buildroot.packages.length}`);
+      if (linux.services.length > 0) parts.push(`   Systemd services: ${linux.services.length}`);
+      if (linux.findings.length > 0) parts.push(`   Findings: ${linux.findings.length}`);
     }
 
     return parts.join('\n');
