@@ -22,6 +22,8 @@ export interface ParsedSymbol {
   docComment?: string;
   exported: boolean;
   parentName?: string;
+  /** Cyclomatic complexity (1 + number of decision points) */
+  complexity?: number;
 }
 
 export interface ParsedRelationship {
@@ -273,8 +275,15 @@ export class CodeParser {
 
   /** Convert a syntax node to a ParsedSymbol */
   private nodeToSymbol(node: SyntaxNode, sourceCode: string, lang?: string): ParsedSymbol | null {
-    const kind = this.mapNodeKind(node.type);
+    let kind = this.mapNodeKind(node.type);
     if (!kind) return null;
+
+    // C/C++: declaration nodes containing function_declarator are actually function declarations
+    if ((lang === 'c' || lang === 'cpp') && kind === 'variable' && node.type === 'declaration') {
+      if (node.children.some(c => c.type === 'function_declarator' || c.type === 'pointer_declarator')) {
+        kind = 'function';
+      }
+    }
 
     // Extract name - varies by language and node type
     let nameNode: SyntaxNode | null = node.childForFieldName('name') ?? null;
@@ -292,12 +301,29 @@ export class CodeParser {
       nameNode = node.children.find(c => c.type === 'identifier' || c.type === 'type_identifier') ?? null;
     }
 
+    // C/C++: function_declarator inside declaration node (e.g., int foo(void) in header)
+    if (!nameNode && (lang === 'c' || lang === 'cpp')) {
+      const declarator = node.children.find(c =>
+        c.type === 'function_declarator' || c.type === 'pointer_declarator'
+      );
+      if (declarator) {
+        nameNode = declarator.children.find(c =>
+          c.type === 'identifier' || c.type === 'type_identifier'
+        ) ?? null;
+      }
+    }
+
     if (!nameNode) return null;
 
     const name = sourceCode.slice(nameNode.startIndex, nameNode.endIndex);
     const sourceSlice = sourceCode.slice(node.startIndex, node.endIndex);
     const docComment = this.extractDocComment(node, sourceCode);
     const exported = this.isExported(node, sourceCode, lang);
+
+    // Cyclomatic complexity: count decision points in the function body
+    const complexity = (kind === 'function' || kind === 'method')
+      ? this.calculateComplexity(sourceSlice, lang)
+      : undefined;
 
     // Detect parent (class containing method)
     let parentName: string | undefined;
@@ -328,6 +354,7 @@ export class CodeParser {
       docComment,
       exported,
       parentName,
+      complexity,
     };
   }
 
@@ -426,6 +453,51 @@ export class CodeParser {
       }
     }
     return false;
+  }
+
+  /**
+   * Calculate cyclomatic complexity of a function/method body.
+   * Complexity = 1 (baseline) + each decision point.
+   * Decision points: if, else if, while, for, case, catch, &&, ||, ? :
+   */
+  private calculateComplexity(sourceCode: string, lang?: string): number {
+    let complexity = 1; // baseline
+    const body = sourceCode;
+
+    // Count keywords that represent decision points
+    const decisions = [
+      /\bif\s*\(/g, /\belse\s+if\b/g, /\bwhile\s*\(/g,
+      /\bfor\s*\(/g, /\bcase\s+/g, /\bcatch\s*\(/g,
+      /\bswitch\s*\(/g,
+    ];
+
+    for (const re of decisions) {
+      const matches = body.match(re);
+      if (matches) complexity += matches.length;
+    }
+
+    // Count ternary operators (? :) but not inside strings or comments
+    const ternaryMatches = body.match(/\?\s*[^:;]+\s*:/g);
+    if (ternaryMatches) {
+      // Filter out obvious false positives (template literals, macros, etc.)
+      const valid = ternaryMatches.filter(m =>
+        !m.includes('"') && !m.includes("'") && !m.startsWith('//')
+      );
+      complexity += valid.length;
+    }
+
+    // Logical operators && and || that appear in condition contexts
+    const logicalMatches = body.match(/&&|\|\|/g);
+    if (logicalMatches) complexity += logicalMatches.length;
+
+    // Additional C/C++ specific: else without if, but that's usually else-if which we count
+    if (lang === 'c' || lang === 'cpp') {
+      // C/C++ specific: count #if, #ifdef, #elif as branching
+      const preprocMatches = body.match(/\#\s*(?:if|ifdef|ifndef|elif)\b/g);
+      if (preprocMatches) complexity += preprocMatches.length;
+    }
+
+    return complexity;
   }
 
   /**

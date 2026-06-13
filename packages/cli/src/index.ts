@@ -57,6 +57,7 @@ program
   .option('-l, --layer <layer>', 'Filter by architectural layer')
   .option('-n, --limit <number>', 'Max results', '20')
   .option('-p, --project <path>', 'Project path (default: cwd)')
+  .option('--file <path>', 'Filter by file path (substring match)')
   .action(async (query, options) => {
     const { searchCommand } = await import('./commands/search.js');
     await searchCommand(query, options);

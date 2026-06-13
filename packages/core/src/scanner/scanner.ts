@@ -190,13 +190,15 @@ export class ProjectScanner {
       console.warn(`⚠️  ${parseErrors} files failed to parse`);
     }
 
-    // Macro scanner: detect C/C++ function declarations hidden behind macros (LLAMA_API, etc.)
+    // Macro scanner: detect C/C++ function declarations hidden behind macros or with complex return types
     const existingNames = new Set(parseResults.flatMap(r => r.symbols.map(s => s.name)));
     const macroResults = scanProjectMacros(projectPath, validToParse, existingNames);
     if (macroResults.length > 0) {
       const macroSymbolCount = macroResults.reduce((sum, r) => sum + r.symbols.length, 0);
       if (macroSymbolCount > 0) {
-        console.warn(`⚠️  Macro scanner found ${macroSymbolCount} additional C/C++ symbols (behind macros)`);
+        // Track which files got macro contributions
+        const macroFiles = macroResults.filter(r => r.symbols.length > 0).length;
+        console.warn(`📐 Macro scanner: +${macroSymbolCount} symbols across ${macroFiles} files (LLAMA_API, complex return types)`);
         for (const mr of macroResults) {
           const existing = parseResults.find(p => p.filePath === mr.filePath);
           if (existing) {
@@ -238,16 +240,41 @@ export class ProjectScanner {
       } catch { /* skip */ }
     }
 
+    // Capture old stats for incremental diff
+    const oldStats = !full && !forceFull ? this.store.getStats() : null;
+
     // Persist
     if (!full && !forceFull) {
-      for (const filePath of toParse) {
-        const relativePath = path.relative(projectPath, filePath);
+      // Delete symbols for files that were re-parsed
+      const filesToDelete = new Set(toParse.map((fp: string) => path.relative(projectPath, fp)));
+      // Also delete symbols for macro-scanned files (they may have been written by a previous full scan)
+      for (const mr of macroResults) {
+        if (mr.symbols.length > 0) filesToDelete.add(mr.filePath);
+      }
+      for (const relativePath of filesToDelete) {
         this.store.deleteSymbolsByFile(relativePath);
       }
     } else {
       this.store.clear();
     }
     this.store.saveGraph(graph);
+
+    // Output incremental diff for repeat scans
+    if (oldStats) {
+      const symDiff = graph.symbols.size - oldStats.symbols;
+      const relDiff = graph.relationships.length - oldStats.relationships;
+      const fileDiff = graph.files.size - oldStats.files;
+      if (symDiff !== 0 || relDiff !== 0 || fileDiff !== 0) {
+        const parts: string[] = ['📊'];
+        if (symDiff > 0) parts.push(`+${symDiff} symbols`);
+        else if (symDiff < 0) parts.push(`${symDiff} symbols`);
+        if (relDiff > 0) parts.push(`+${relDiff} relationships`);
+        else if (relDiff < 0) parts.push(`${relDiff} relationships`);
+        if (fileDiff > 0) parts.push(`+${fileDiff} files`);
+        if (fileDiff < 0) parts.push(`${fileDiff} files`);
+        console.warn(`   ${parts.join(', ')}`);
+      }
+    }
 
     // Save scan metadata for next run
     this.store.saveScanInfo(projectPath, Array.from(languagesNeeded));

@@ -62,6 +62,7 @@ export class GraphBuilder {
           layer: 'unknown',  // Will be classified later
           docComment: parsed.docComment,
           exported: parsed.exported,
+          complexity: parsed.complexity,
         };
         symbols.set(id, symbol);
       }
@@ -233,20 +234,23 @@ export class GraphBuilder {
       for (const imp of result.imports) {
         // Handle C/C++ wildcard includes (from #include directives)
         // For wildcards, we'll create a relationship to the file itself
-        if (imp.isWildcard && imp.source && !imp.source.startsWith('.') && !imp.source.startsWith('/')) {
+        // C/C++ #include directives use relative paths (../common/header.h) but are wildcard imports
+        const isCInclude = imp.isWildcard && (result.language === 'c' || result.language === 'cpp');
+        if (imp.isWildcard && imp.source && (isCInclude || !imp.source.startsWith('.')) && !imp.source.startsWith('/')) {
           // Try to find the file by name in knownFiles
           const headerFile = this.findHeaderFile(imp.source, knownFiles);
           if (headerFile) {
-            // Create a relationship from each symbol in the importing file
-            // to each symbol in the header file
-            const headerSymbols = [...symbols.values()].filter(s => s.filePath === headerFile && s.exported);
-            for (const fileSymbol of fileSymbols) {
-              for (const headerSym of headerSymbols) {
-                const relId = `${fileSymbol.id}:imports:${headerSym.id}`;
+            // Wildcard imports (C/C++ #include): create ONE import per file pair (not N×M)
+            // This avoids O(n²) memory explosion for headers with hundreds of symbols
+            if (fileSymbols.length > 0) {
+              const headerSymbols = [...symbols.values()].filter(s => s.filePath === headerFile && s.exported);
+              if (headerSymbols.length > 0) {
+                // Use first file symbol → first header symbol to represent the dependency
+                const relId = `${fileSymbols[0].id}:imports:${headerSymbols[0].id}`;
                 relationships.push({
                   id: relId,
-                  sourceId: fileSymbol.id,
-                  targetId: headerSym.id,
+                  sourceId: fileSymbols[0].id,
+                  targetId: headerSymbols[0].id,
                   kind: 'imports',
                   line: imp.line,
                 });
@@ -305,10 +309,11 @@ export class GraphBuilder {
       if (knownFiles.has(headerName + ext)) return headerName + ext;
     }
 
-    // Try to find by filename (search all known files)
-    const baseName = headerName.split('/').pop() || headerName;
+    // Try to find by filename (search all known files — handle Windows paths)
+    const baseName = headerName.replace(/\\/g, '/').split('/').pop() || headerName;
     for (const file of knownFiles) {
-      const fileName = file.split('/').pop() || file;
+      const normalized = file.replace(/\\/g, '/');
+      const fileName = normalized.split('/').pop() || file;
       if (fileName === baseName || fileName === headerName) {
         return file;
       }

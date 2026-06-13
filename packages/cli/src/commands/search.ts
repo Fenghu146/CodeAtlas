@@ -7,7 +7,7 @@ import { SQLiteStore } from '@codeatlas/core';
 
 export async function searchCommand(
   query: string,
-  options: { kind?: string; layer?: string; limit?: string; project?: string },
+  options: { kind?: string; layer?: string; limit?: string; project?: string; file?: string },
 ) {
   const projectPath = path.resolve(options.project || process.cwd());
   const store = await SQLiteStore.create({
@@ -16,22 +16,47 @@ export async function searchCommand(
 
   try {
     const limit = Math.min(parseInt(options.limit || '20'), 200);
-    const results = store.searchSymbols(query, {
-      kind: options.kind as any,
-      layer: options.layer as any,
-      limit,
-    });
+
+    // P0#1: Support regex pipe (|) — split query into multiple terms
+    const searchTerms = query.includes('|') ? query.split('|').map(s => s.trim()).filter(Boolean) : [query];
+
+    // Collect results from all search terms
+    let results: any[] = [];
+    const seenIds = new Set<string>();
+    for (const term of searchTerms) {
+      const termResults = store.searchSymbols(term, {
+        kind: options.kind as any,
+        layer: options.layer as any,
+        limit,
+      });
+      for (const r of termResults) {
+        if (!seenIds.has(r.id)) {
+          seenIds.add(r.id);
+          results.push(r);
+        }
+      }
+      if (results.length >= limit) break;
+    }
+
+    // P0#3: --file filter — filter by file path
+    if (options.file) {
+      const fileQuery = options.file.replace(/\\/g, '/').toLowerCase();
+      results = results.filter((s: any) =>
+        s.filePath.toLowerCase().includes(fileQuery)
+      );
+    }
 
     if (results.length === 0) {
       console.log(`\n🔍 No results found for "${query}"\n`);
       console.log('  Tips:');
-      console.log('  - Make sure you have scanned the project: codeatlas scan');
-      console.log('  - Try broader search terms');
-      console.log('  - Use --kind or --layer to filter results\n');
+      console.log('  - Use | for OR search: llama_decode | llama_encode');
+      console.log('  - Use --file to search within a file: --file "include/llama.h"');
+      console.log('  - Use --limit 200 to show more results');
+      console.log('  - Use --kind function or --layer business to filter\n');
       return;
     }
 
-    console.log(`\n🔍 Found ${results.length} results for "${query}":\n`);
+    console.log(`\n🔍 Found ${results.length} results for "${query}"${searchTerms.length > 1 ? ' (' + searchTerms.join(' | ') + ')' : ''}:\n`);
 
     // Group by layer
     const byLayer = new Map<string, typeof results>();

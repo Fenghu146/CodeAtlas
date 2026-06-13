@@ -55,7 +55,20 @@ export async function infoCommand(symbolId: string, options?: { project?: string
           type: 5, enum: 6, variable: 10, constant: 11,
         };
 
-        preferred.sort((a, b) => (priority[a.kind] ?? 99) - (priority[b.kind] ?? 99));
+        // Language preference: C/C++ files get priority over JS/TS when kinds are close
+        const cExts = new Set(['.c', '.h', '.cpp', '.hpp', '.cc', '.cxx', '.hh', '.hxx']);
+        const jsExts = new Set(['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs']);
+
+        preferred.sort((a, b) => {
+          const kindDiff = (priority[a.kind] ?? 99) - (priority[b.kind] ?? 99);
+          if (kindDiff !== 0) return kindDiff;
+          // Same kind: prefer C over JS (C struct vs JS class with same name)
+          const aIsC = cExts.has(path.extname(a.filePath).toLowerCase());
+          const bIsC = cExts.has(path.extname(b.filePath).toLowerCase());
+          if (aIsC && !bIsC) return -1;
+          if (!aIsC && bIsC) return 1;
+          return 0;
+        });
         symbol = preferred[0];
 
         // Show warning if multiple matches

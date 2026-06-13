@@ -77,6 +77,25 @@ export function scanMacroDeclarations(filePath: string, content: string): Parsed
   }
 
   // Try multiline match: LLAMA_API \n return_type name(params);
+  // P1#5 & #4: Catch C/C++ function definitions with complex return types
+  // that tree-sitter may miss: const char * name(params), struct X * name(params)
+  const COMPLEX_RETURN_REGEX = /^((?:const|struct|unsigned|signed)\s+)?(\w[\w\s]*(?:\s*\*+\s*)+)\s+(\w+)\s*\(([^)]*)\)\s*\{/gm;
+  while ((match = COMPLEX_RETURN_REGEX.exec(content)) !== null) {
+    const funcName = match[3].trim();
+    if (symbols.some(s => s.name === funcName)) continue;
+    const lineNum = content.slice(0, match.index).split(/\r?\n/).length;
+    symbols.push({
+      name: funcName,
+      kind: 'function',
+      startLine: lineNum,
+      endLine: lineNum,
+      startCol: 0,
+      endCol: match[0].length,
+      sourceCode: lines[lineNum - 1]?.trim() ?? match[0].trim(),
+      exported: true,
+    });
+  }
+
   while ((match = EXPORT_FN_MULTILINE_REGEX.exec(content)) !== null) {
     const funcName = match[2].trim();
     // Skip if already found by single-line regex (dedup by name)
