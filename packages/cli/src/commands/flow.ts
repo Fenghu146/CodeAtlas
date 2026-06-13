@@ -12,7 +12,7 @@ export async function flowCommand(
   const depth = parseInt(options.depth || '5');
   const format = options.format || 'text';
 
-  const store = await SQLiteStore.create({
+  const store = new SQLiteStore({
     dbPath: path.join(process.cwd(), '.codeatlas', 'db.sqlite'),
   });
 

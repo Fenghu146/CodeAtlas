@@ -18,7 +18,7 @@ export async function foamCommand(options: {
   source?: boolean;
 }) {
   const projectPath = process.cwd();
-  const store = await SQLiteStore.create({
+  const store = new SQLiteStore({
     dbPath: path.join(projectPath, '.codeatlas', 'db.sqlite'),
   });
 

@@ -1,10 +1,10 @@
 // ============================================================
 // SQLite Storage - Persists the code graph to a local SQLite DB
 // ============================================================
-// Uses sql.js (SQLite compiled to WASM) for zero-dependency,
-// cross-platform SQLite access. Includes FTS5 for full-text search.
+// Uses Node.js built-in node:sqlite (Node 24+) — zero external dependencies.
+// No WASM overhead, no native addon compilation, direct disk I/O.
 
-import initSqlJs, { type Database } from 'sql.js';
+import { DatabaseSync } from 'node:sqlite';
 import path from 'path';
 import fs from 'fs';
 import type { Symbol, Relationship, FileInfo, CodeGraph, Layer, SymbolKind, RelationshipKind } from '../graph/types.js';
@@ -19,23 +19,40 @@ export interface StoreConfig {
 /**
  * SQLite-backed storage for the code graph.
  * 
- * Uses sql.js (pure WASM SQLite) for zero native-dependency operation.
- * Must call `await SQLiteStore.create(config)` instead of `new SQLiteStore(config)`.
+ * Uses Node.js built-in node:sqlite (Node 24+) — zero external dependencies.
+ * No WASM overhead, no native addon compilation, direct disk I/O.
  */
 export class SQLiteStore {
-  private db: Database;
+  private db: DatabaseSync;
   private dbPath: string;
-  private dirty = false;
   private _annotations: AnnotationStore;
   private _meta: ProjectMetaStore;
   private _files: FileStore;
 
-  private constructor(db: Database, dbPath: string) {
-    this.db = db;
-    this.dbPath = dbPath;
-    this._annotations = new AnnotationStore(db);
-    this._meta = new ProjectMetaStore(db);
-    this._files = new FileStore(db);
+  /**
+   * Create a new SQLiteStore backed by Node.js built-in node:sqlite.
+   * Synchronous constructor — no WASM loading overhead.
+   */
+  constructor(config: StoreConfig) {
+    this.dbPath = config.dbPath;
+
+    // Ensure directory exists
+    const dir = path.dirname(config.dbPath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+
+    this.db = new DatabaseSync(config.dbPath);
+    this.db.exec('PRAGMA foreign_keys = ON');
+    this.db.exec('PRAGMA journal_mode = WAL');
+    this.db.exec('PRAGMA cache_size = -64000');
+    this.db.exec('PRAGMA synchronous = NORMAL');
+
+    this._annotations = new AnnotationStore(this);
+    this._meta = new ProjectMetaStore(this);
+    this._files = new FileStore(this);
+
+    this.initSchema();
   }
 
   /** Access annotation operations */
@@ -53,43 +70,9 @@ export class SQLiteStore {
     return this._files;
   }
 
-  /**
-   * Async factory - creates and initializes a SQLiteStore.
-   * sql.js requires async WASM initialization before use.
-   */
-  static async create(config: StoreConfig): Promise<SQLiteStore> {
-    const SQL = await initSqlJs();
-    
-    // Ensure directory exists
-    const dir = path.dirname(config.dbPath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-
-    let db: Database;
-    if (fs.existsSync(config.dbPath)) {
-      const buffer = fs.readFileSync(config.dbPath);
-      db = new SQL.Database(buffer);
-    } else {
-      db = new SQL.Database();
-    }
-
-    db.run('PRAGMA foreign_keys = ON');
-    // Enable WAL mode for better write performance (3-5x faster)
-    db.run('PRAGMA journal_mode = WAL');
-    // Increase cache size for better performance
-    db.run('PRAGMA cache_size = -64000'); // 64MB cache
-    // Disable synchronous for faster writes (safe with WAL)
-    db.run('PRAGMA synchronous = NORMAL');
-
-    const store = new SQLiteStore(db, config.dbPath);
-    store.initSchema();
-    return store;
-  }
-
   /** Create tables if they don't exist */
   private initSchema(): void {
-    this.db.run(`
+    this.db.exec(`
       CREATE TABLE IF NOT EXISTS symbols (
         id          TEXT PRIMARY KEY,
         name        TEXT NOT NULL,
@@ -112,15 +95,15 @@ export class SQLiteStore {
       )
     `);
 
-    this.db.run('CREATE INDEX IF NOT EXISTS idx_symbols_file ON symbols(file_path)');
-    this.db.run('CREATE INDEX IF NOT EXISTS idx_symbols_kind ON symbols(kind)');
-    this.db.run('CREATE INDEX IF NOT EXISTS idx_symbols_layer ON symbols(layer)');
-    this.db.run('CREATE INDEX IF NOT EXISTS idx_symbols_name ON symbols(name)');
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_symbols_file ON symbols(file_path)');
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_symbols_kind ON symbols(kind)');
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_symbols_layer ON symbols(layer)');
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_symbols_name ON symbols(name)');
 
     // Migration: Add imports column to files table if it doesn't exist
     this.migrateFilesTable();
 
-    this.db.run(`
+    this.db.exec(`
       CREATE TABLE IF NOT EXISTS relationships (
         id          TEXT PRIMARY KEY,
         source_id   TEXT NOT NULL REFERENCES symbols(id) ON DELETE CASCADE,
@@ -131,9 +114,9 @@ export class SQLiteStore {
       )
     `);
 
-    this.db.run('CREATE INDEX IF NOT EXISTS idx_rel_source ON relationships(source_id)');
-    this.db.run('CREATE INDEX IF NOT EXISTS idx_rel_target ON relationships(target_id)');
-    this.db.run('CREATE INDEX IF NOT EXISTS idx_rel_kind ON relationships(kind)');
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_rel_source ON relationships(source_id)');
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_rel_target ON relationships(target_id)');
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_rel_kind ON relationships(kind)');
 
     // Files table (delegated to FileStore)
     this._files.initSchema();
@@ -144,13 +127,13 @@ export class SQLiteStore {
     // Annotations table (delegated to AnnotationStore)
     this._annotations.initSchema();
 
-    // Indexes for symbol search (LIKE-based, always available in sql.js WASM)
+    // Indexes for symbol search
     try {
-      this.db.run('CREATE INDEX IF NOT EXISTS idx_symbols_name ON symbols(name)');
-      this.db.run('CREATE INDEX IF NOT EXISTS idx_symbols_kind ON symbols(kind)');
-      this.db.run('CREATE INDEX IF NOT EXISTS idx_symbols_layer ON symbols(layer)');
+      this.db.exec('CREATE INDEX IF NOT EXISTS idx_symbols_name ON symbols(name)');
+      this.db.exec('CREATE INDEX IF NOT EXISTS idx_symbols_kind ON symbols(kind)');
+      this.db.exec('CREATE INDEX IF NOT EXISTS idx_symbols_layer ON symbols(layer)');
     } catch {
-      // Indexes may already exist or not be available
+      // Indexes may already exist
     }
   }
 
@@ -166,7 +149,7 @@ export class SQLiteStore {
       const hasImports = columns.some((col: any) => col.name === 'imports');
 
       if (!hasImports) {
-        this.db.run('ALTER TABLE files ADD COLUMN imports TEXT');
+        this.db.exec('ALTER TABLE files ADD COLUMN imports TEXT');
       }
     } catch {
       // Table might not exist yet, skip migration
@@ -179,26 +162,27 @@ export class SQLiteStore {
 
   /** Run a SELECT and return array of row objects */
   private queryAll(sql: string, params: any[] = []): Record<string, any>[] {
-    const stmt = this.db.prepare(sql);
-    if (params.length > 0) stmt.bind(params);
-    const rows: Record<string, any>[] = [];
-    while (stmt.step()) {
-      rows.push(stmt.getAsObject());
+    try {
+      const stmt = this.db.prepare(sql);
+      if (params.length > 0) return stmt.all(...params) as Record<string, any>[];
+      return stmt.all() as Record<string, any>[];
+    } catch (err) {
+      throw err;
     }
-    stmt.free();
-    return rows;
   }
 
   /** Run a SELECT and return first row object or undefined */
   private queryOne(sql: string, params: any[] = []): Record<string, any> | undefined {
-    const rows = this.queryAll(sql, params);
-    return rows.length > 0 ? rows[0] : undefined;
+    try {
+      return this.db.prepare(sql).get(...params) as Record<string, any> | undefined;
+    } catch {
+      return undefined;
+    }
   }
 
-  /** Run a write statement and mark as dirty */
+  /** Run a write statement */
   private run(sql: string, params: any[] = []): void {
-    this.db.run(sql, params);
-    this.dirty = true;
+    this.db.prepare(sql).run(...params);
   }
 
   // ========================
@@ -282,7 +266,7 @@ export class SQLiteStore {
     const before = this.queryOne('SELECT COUNT(*) as count FROM symbols WHERE file_path = ?', [filePath]);
     this.run('DELETE FROM symbols WHERE file_path = ?', [filePath]);
     const after = this.queryOne('SELECT COUNT(*) as count FROM symbols WHERE file_path = ?', [filePath]);
-    this.persist();
+    /* persist no longer needed — node:sqlite writes directly to disk */
     return (before?.count ?? 0) - (after?.count ?? 0);
   }
 
@@ -478,78 +462,83 @@ export class SQLiteStore {
   }
 
   // ========================
-  // Bulk Operations
+  // Bulk Operations — Streaming Batch API
   // ========================
 
-  /** Save an entire graph to the store (optimized with batch operations) */
-  saveGraph(graph: CodeGraph): void {
-    // Speed up bulk writes: disable sync, larger cache
+  /** Prepare store for a large bulk insert session (call before batch ops) */
+  beginBulkInsert(): void {
     try {
-      this.db.run('PRAGMA synchronous = OFF');
-      this.db.run('PRAGMA cache_size = -64000'); // 64MB cache for 39K+ symbols
-      this.db.run('PRAGMA page_size = 4096');
-    } catch { /* pragma may not be available in all environments */ }
-
+      this.db.exec('PRAGMA synchronous = OFF');
+      this.db.exec('PRAGMA cache_size = -64000');
+    } catch { /* pragma may fail */ }
     this.run('BEGIN TRANSACTION');
+  }
+
+  /** Finalize a bulk insert session (call after all batch ops) */
+  endBulkInsert(): void {
+    this.run('COMMIT');
+    try { this.db.exec('DROP TABLE IF EXISTS symbols_fts'); } catch { /* ignore */ }
+  }
+
+  /** Insert or replace a single symbol (ON CONFLICT → overwrite) */
+  saveSymbol(symbol: Symbol): void {
+    this.run(`
+      INSERT INTO symbols (id, name, kind, file_path, start_line, end_line, start_col, end_col,
+                           source_code, language, layer, doc_comment, ai_summary, complexity, exported, metadata)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        name=excluded.name, kind=excluded.kind, source_code=excluded.source_code,
+        layer=excluded.layer, complexity=excluded.complexity
+    `, [
+      symbol.id, symbol.name, symbol.kind, symbol.filePath,
+      symbol.startLine, symbol.endLine, symbol.startCol ?? null, symbol.endCol ?? null,
+      symbol.sourceCode ?? null, symbol.language, symbol.layer,
+      symbol.docComment ?? null, symbol.aiSummary ?? null,
+      symbol.complexity ?? null, symbol.exported ? 1 : 0,
+      symbol.metadata ? JSON.stringify(symbol.metadata) : null,
+    ]);
+  }
+
+  /** Insert a single relationship (duplicates ignored) */
+  saveRelationship(rel: Relationship): void {
+    this.run(`
+      INSERT OR IGNORE INTO relationships (id, source_id, target_id, kind, line, metadata)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `, [
+      rel.id, rel.sourceId, rel.targetId, rel.kind,
+      rel.line ?? null, rel.metadata ? JSON.stringify(rel.metadata) : null,
+    ]);
+  }
+
+  /** Upsert a single file record */
+  saveFile(file: FileInfo): void {
+    this.run(`
+      INSERT INTO files (path, language, size, line_count, hash, parsed_at, imports, metadata)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(path) DO UPDATE SET
+        language=excluded.language, size=excluded.size, line_count=excluded.line_count,
+        hash=excluded.hash, parsed_at=excluded.parsed_at,
+        imports=excluded.imports, metadata=excluded.metadata
+    `, [
+      file.path, file.language, file.size, file.lineCount,
+      file.hash, file.parsedAt ?? null,
+      file.imports ? JSON.stringify(file.imports) : null,
+      file.metadata ? JSON.stringify(file.metadata) : null,
+    ]);
+  }
+
+  /** Save an entire graph to the store (bulk, for backward compatibility) */
+  saveGraph(graph: CodeGraph): void {
+    this.beginBulkInsert();
     try {
-      const symbolStmt = this.db.prepare(`
-        INSERT INTO symbols (id, name, kind, file_path, start_line, end_line, start_col, end_col,
-                             source_code, language, layer, doc_comment, ai_summary, complexity, exported, metadata)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
-
-      for (const symbol of graph.symbols.values()) {
-        symbolStmt.run([
-          symbol.id, symbol.name, symbol.kind, symbol.filePath,
-          symbol.startLine, symbol.endLine, symbol.startCol ?? null, symbol.endCol ?? null,
-          symbol.sourceCode ?? null, symbol.language, symbol.layer,
-          symbol.docComment ?? null, symbol.aiSummary ?? null,
-          symbol.complexity ?? null, symbol.exported ? 1 : 0,
-          symbol.metadata ? JSON.stringify(symbol.metadata) : null,
-        ]);
-      }
-
-      // Batch insert relationships
-      const relStmt = this.db.prepare(`
-        INSERT OR IGNORE INTO relationships (id, source_id, target_id, kind, line, metadata)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `);
-
-      for (const rel of graph.relationships) {
-        relStmt.run([
-          rel.id, rel.sourceId, rel.targetId, rel.kind,
-          rel.line ?? null, rel.metadata ? JSON.stringify(rel.metadata) : null,
-        ]);
-      }
-
-      // Batch insert files
-      const fileStmt = this.db.prepare(`
-        INSERT INTO files (path, language, size, line_count, hash, parsed_at, imports, metadata)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(path) DO UPDATE SET
-          language = excluded.language, size = excluded.size, line_count = excluded.line_count,
-          hash = excluded.hash, parsed_at = excluded.parsed_at, imports = excluded.imports, metadata = excluded.metadata
-      `);
-
-      for (const file of graph.files.values()) {
-        fileStmt.run([
-          file.path, file.language, file.size, file.lineCount,
-          file.hash, file.parsedAt ?? null,
-          file.imports ? JSON.stringify(file.imports) : null,
-          file.metadata ? JSON.stringify(file.metadata) : null,
-        ]);
-      }
-
-      this.run('COMMIT');
+      for (const symbol of graph.symbols.values()) this.saveSymbol(symbol);
+      for (const rel of graph.relationships) this.saveRelationship(rel);
+      for (const file of graph.files.values()) this.saveFile(file);
     } catch (err) {
       this.run('ROLLBACK');
       throw err;
     }
-
-    // Clean up old FTS table if it exists (from previous versions with FTS5/FTS4)
-    try { this.db.run('DROP TABLE IF EXISTS symbols_fts'); } catch { /* ignore */ }
-
-    this.persist();
+    this.endBulkInsert();
   }
 
   // ========================
@@ -559,7 +548,7 @@ export class SQLiteStore {
   /** Add an annotation to a symbol */
   addAnnotation(symbolId: string, userId: string, content: string, type: string = 'comment'): string {
     const id = this._annotations.addAnnotation(symbolId, userId, content, type);
-    this.persist();
+    /* persist no longer needed — node:sqlite writes directly to disk */
     return id;
   }
 
@@ -576,19 +565,19 @@ export class SQLiteStore {
   /** Update an annotation */
   updateAnnotation(id: string, content: string): void {
     this._annotations.updateAnnotation(id, content);
-    this.persist();
+    /* persist no longer needed — node:sqlite writes directly to disk */
   }
 
   /** Delete an annotation */
   deleteAnnotation(id: string): void {
     this._annotations.deleteAnnotation(id);
-    this.persist();
+    /* persist no longer needed — node:sqlite writes directly to disk */
   }
 
   /** Mark annotation as resolved/unresolved */
   resolveAnnotation(id: string, resolved: boolean): void {
     this._annotations.resolveAnnotation(id, resolved);
-    this.persist();
+    /* persist no longer needed — node:sqlite writes directly to disk */
   }
 
   /** Get annotation count per symbol */
@@ -600,38 +589,31 @@ export class SQLiteStore {
   // Vector/Embedding Operations
   // ========================
 
-  /** Execute raw SQL query (for internal use) */
+  /** Execute raw SQL query (for internal use by sub-stores) */
   executeQuery(sql: string, params: any[] = []): Record<string, any>[] {
     return this.queryAll(sql, params);
   }
 
-  /** Execute raw SQL statement */
+  /** Execute raw SQL statement (writes with params) */
   executeStatement(sql: string, params: any[] = []): void {
     this.run(sql, params);
   }
 
+  /** Execute raw DDL (no params, for schema creation) */
+  executeExec(sql: string): void {
+    this.db.exec(sql);
+  }
+
   /** Clear all data */
   clear(): void {
-    this.run('DELETE FROM relationships');
-    this.run('DELETE FROM symbols');
-    this.run('DELETE FROM files');
-    this.persist();
+    this.db.exec('DELETE FROM relationships');
+    this.db.exec('DELETE FROM symbols');
+    this.db.exec('DELETE FROM files');
   }
 
-  /** Close the database connection and save to disk */
+  /** Close the database connection */
   close(): void {
-    this.persist();
     this.db.close();
-  }
-
-  /** Save database to file if there are pending changes */
-  private persist(): void {
-    if (this.dirty) {
-      const data = this.db.export();
-      const buffer = Buffer.from(data);
-      fs.writeFileSync(this.dbPath, buffer);
-      this.dirty = false;
-    }
   }
 
   // ========================

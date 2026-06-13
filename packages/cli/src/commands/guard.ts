@@ -20,7 +20,7 @@ export async function guardCommand(options: {
     return;
   }
 
-  const store = await SQLiteStore.create({
+  const store = new SQLiteStore({
     dbPath: path.join(process.cwd(), '.codeatlas', 'db.sqlite'),
   });
 

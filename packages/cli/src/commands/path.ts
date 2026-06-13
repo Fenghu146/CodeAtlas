@@ -6,7 +6,7 @@ import path from 'path';
 import { SQLiteStore, PathFinder } from '@codeatlas/core';
 
 export async function pathCommand(source: string, target: string, options: { depth?: string; format?: string }) {
-  const store = await SQLiteStore.create({
+  const store = new SQLiteStore({
     dbPath: path.join(process.cwd(), '.codeatlas', 'db.sqlite'),
   });
 

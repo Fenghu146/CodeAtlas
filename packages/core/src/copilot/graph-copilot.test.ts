@@ -23,7 +23,7 @@ describe('GraphCopilot', () => {
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
-    store = await SQLiteStore.create({ dbPath: TEST_DB_PATH });
+    store = new SQLiteStore({ dbPath: TEST_DB_PATH });
 
     // Seed test data
     const testSymbols: Symbol[] = [

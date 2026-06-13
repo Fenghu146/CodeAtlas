@@ -1,26 +1,19 @@
 // ============================================================
 // File Store - Manages file metadata
 // ============================================================
-// Extracted from SQLiteStore for better separation of concerns.
-// Handles: upsert, get, hash, recent files.
 
-import type { Database } from 'sql.js';
+import type { SQLiteStore } from './sqlite-store.js';
 import type { FileInfo } from '../graph/types.js';
 
-/**
- * Manages file metadata (path, language, hash, etc.).
- * Self-contained: only touches the files table.
- */
 export class FileStore {
-  private db: Database;
+  private store: SQLiteStore;
 
-  constructor(db: Database) {
-    this.db = db;
+  constructor(store: SQLiteStore) {
+    this.store = store;
   }
 
-  /** Create files table if not exists */
   initSchema(): void {
-    this.db.run(`
+    this.store.executeExec(`
       CREATE TABLE IF NOT EXISTS files (
         path        TEXT PRIMARY KEY,
         language    TEXT NOT NULL,
@@ -34,10 +27,9 @@ export class FileStore {
     `);
   }
 
-  /** Insert or update a file */
   upsertFile(file: FileInfo): void {
-    this.db.run('DELETE FROM files WHERE path = ?', [file.path]);
-    this.db.run(`
+    this.store.executeStatement('DELETE FROM files WHERE path = ?', [file.path]);
+    this.store.executeStatement(`
       INSERT INTO files (path, language, size, line_count, hash, parsed_at, imports, metadata)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `, [
@@ -48,10 +40,10 @@ export class FileStore {
     ]);
   }
 
-  /** Get file info by path */
   getFile(filePath: string): FileInfo | undefined {
-    const row = this.queryOne('SELECT * FROM files WHERE path = ?', [filePath]);
-    if (!row) return undefined;
+    const rows = this.store.executeQuery('SELECT * FROM files WHERE path = ?', [filePath]);
+    if (rows.length === 0) return undefined;
+    const row = rows[0];
     return {
       path: row.path,
       language: row.language,
@@ -64,19 +56,14 @@ export class FileStore {
     };
   }
 
-  /** Get file hash only (lightweight) */
   getFileHash(filePath: string): string | undefined {
-    const row = this.queryOne('SELECT hash FROM files WHERE path = ?', [filePath]);
-    return row?.hash;
+    const rows = this.store.executeQuery('SELECT hash FROM files WHERE path = ?', [filePath]);
+    return rows[0]?.hash;
   }
 
-  /** Get recent files sorted by parsed_at */
   getRecentFiles(limit: number = 10): FileInfo[] {
-    const rows = this.queryAll(
-      'SELECT * FROM files ORDER BY parsed_at DESC LIMIT ?',
-      [limit]
-    );
-    return rows.map(row => ({
+    const rows = this.store.executeQuery('SELECT * FROM files ORDER BY parsed_at DESC LIMIT ?', [limit]);
+    return rows.map((row: any) => ({
       path: row.path,
       language: row.language,
       size: row.size,
@@ -88,23 +75,21 @@ export class FileStore {
     }));
   }
 
-  // Private helpers
-  private queryOne(sql: string, params: any[] = []): Record<string, any> | undefined {
-    const stmt = this.db.prepare(sql);
-    if (params.length > 0) stmt.bind(params);
-    const row = stmt.step() ? stmt.getAsObject() : undefined;
-    stmt.free();
-    return row;
+  deleteFile(filePath: string): void {
+    this.store.executeStatement('DELETE FROM files WHERE path = ?', [filePath]);
   }
 
-  private queryAll(sql: string, params: any[] = []): Record<string, any>[] {
-    const stmt = this.db.prepare(sql);
-    if (params.length > 0) stmt.bind(params);
-    const rows: Record<string, any>[] = [];
-    while (stmt.step()) {
-      rows.push(stmt.getAsObject());
-    }
-    stmt.free();
-    return rows;
+  getAllFiles(): FileInfo[] {
+    const rows = this.store.executeQuery('SELECT * FROM files ORDER BY path');
+    return rows.map((row: any) => ({
+      path: row.path,
+      language: row.language,
+      size: row.size,
+      lineCount: row.line_count,
+      hash: row.hash,
+      parsedAt: row.parsed_at,
+      imports: row.imports ? JSON.parse(row.imports) : undefined,
+      metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
+    }));
   }
 }

@@ -11,7 +11,7 @@ export async function refactorCommand(options: {
   type?: string;
   format?: string;
 }) {
-  const store = await SQLiteStore.create({
+  const store = new SQLiteStore({
     dbPath: path.join(process.cwd(), '.codeatlas', 'db.sqlite'),
   });
 

@@ -211,7 +211,7 @@ async function listRuns(reader: TraceReader, options: { format?: string }) {
 async function analyzeTrace(tracePath: string, options: { format?: string }) {
   const { SQLiteStore, TraceAnalyzer } = await import('@codeatlas/core');
 
-  const store = await SQLiteStore.create({
+  const store = new SQLiteStore({
     dbPath: path.join(process.cwd(), '.codeatlas', 'db.sqlite'),
   });
 

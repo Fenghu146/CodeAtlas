@@ -35,7 +35,7 @@ export async function scanCommand(projectPath: string, options: { full?: boolean
   }
   console.log('');
 
-  const store = await SQLiteStore.create({
+  const store = new SQLiteStore({
     dbPath: path.join(resolvedPath, '.codeatlas', 'db.sqlite'),
   });
 

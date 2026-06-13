@@ -10,7 +10,7 @@ export async function searchCommand(
   options: { kind?: string; layer?: string; limit?: string; project?: string; file?: string },
 ) {
   const projectPath = path.resolve(options.project || process.cwd());
-  const store = await SQLiteStore.create({
+  const store = new SQLiteStore({
     dbPath: path.join(projectPath, '.codeatlas', 'db.sqlite'),
   });
 

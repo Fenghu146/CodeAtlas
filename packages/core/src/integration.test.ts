@@ -75,7 +75,7 @@ describe('Integration Tests', () => {
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
-    store = await SQLiteStore.create({ dbPath: TEST_DB_PATH });
+    store = new SQLiteStore({ dbPath: TEST_DB_PATH });
   });
 
   afterAll(() => {

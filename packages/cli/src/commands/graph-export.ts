@@ -15,7 +15,7 @@ export async function graphExportCommand(options: {
   limit?: string;
   stats?: boolean;
 }) {
-  const store = await SQLiteStore.create({
+  const store = new SQLiteStore({
     dbPath: path.join(process.cwd(), '.codeatlas', 'db.sqlite'),
   });
 

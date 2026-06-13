@@ -71,7 +71,7 @@ async function initForProject(newPath: string): Promise<string> {
   }
 
   const dbPath = path.join(dbDir, 'db.sqlite');
-  store = await SQLiteStore.create({ dbPath });
+  store = new SQLiteStore({ dbPath });
   scanner = new ProjectScanner(store);
   sharedCopilot = new GraphCopilot(store, newPath);
   projectPath = newPath;

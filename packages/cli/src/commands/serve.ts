@@ -22,7 +22,7 @@ export async function serveCommand(options: { port?: string; watch?: boolean }) 
 
   if (fs.existsSync(dbPath)) {
     try {
-      store = await SQLiteStore.create({ dbPath });
+      store = new SQLiteStore({ dbPath });
     } catch (err) {
       console.warn('⚠️  Could not open database:', err);
     }

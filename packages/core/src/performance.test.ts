@@ -24,7 +24,7 @@ describe('Performance Benchmarks', () => {
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
-    store = await SQLiteStore.create({ dbPath: PERF_DB_PATH });
+    store = new SQLiteStore({ dbPath: PERF_DB_PATH });
   });
 
   afterAll(() => {

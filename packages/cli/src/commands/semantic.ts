@@ -10,7 +10,7 @@ export async function semanticCommand(
   query: string,
   options: { format?: string; top?: string; provider?: string },
 ) {
-  const store = await SQLiteStore.create({
+  const store = new SQLiteStore({
     dbPath: path.join(process.cwd(), '.codeatlas', 'db.sqlite'),
   });
 

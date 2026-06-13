@@ -6,7 +6,7 @@ import path from 'path';
 import { SQLiteStore, CoverageAnalyzer } from '@codeatlas/core';
 
 export async function coverageCommand(options: { symbol?: string; format?: string }) {
-  const store = await SQLiteStore.create({
+  const store = new SQLiteStore({
     dbPath: path.join(process.cwd(), '.codeatlas', 'db.sqlite'),
   });
 

@@ -15,7 +15,7 @@ export async function teamExportCommand(options: { output?: string }) {
     return;
   }
 
-  const store = await SQLiteStore.create({ dbPath });
+  const store = new SQLiteStore({ dbPath });
 
   try {
     const outputPath = options.output || path.join(projectPath, '.codeatlas', 'team-data.json');
@@ -40,7 +40,7 @@ export async function teamImportCommand(inputFile: string) {
     return;
   }
 
-  const store = await SQLiteStore.create({ dbPath });
+  const store = new SQLiteStore({ dbPath });
 
   try {
     console.log(`\n📥 Importing team data from ${inputFile}...`);
@@ -74,7 +74,7 @@ export async function teamStatusCommand() {
     return;
   }
 
-  const store = await SQLiteStore.create({ dbPath });
+  const store = new SQLiteStore({ dbPath });
 
   try {
     const stats = store.getStats();

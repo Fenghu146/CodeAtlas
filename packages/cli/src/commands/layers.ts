@@ -12,7 +12,7 @@ interface LayersOptions {
 }
 
 export async function layersCommand(options: LayersOptions = {}) {
-  const store = await SQLiteStore.create({
+  const store = new SQLiteStore({
     dbPath: path.join(process.cwd(), '.codeatlas', 'db.sqlite'),
   });
 

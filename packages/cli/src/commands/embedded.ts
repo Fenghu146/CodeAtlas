@@ -11,7 +11,7 @@ export async function embeddedCommand(
   options: { format?: string; project?: string; profile?: string },
 ) {
   const projectPath = path.resolve(options.project || process.cwd());
-  const store = await SQLiteStore.create({
+  const store = new SQLiteStore({
     dbPath: path.join(projectPath, '.codeatlas', 'db.sqlite'),
   });
 

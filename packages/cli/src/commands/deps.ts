@@ -9,7 +9,7 @@ export async function depsCommand(options: {
   format?: string;
   circular?: boolean;
 }) {
-  const store = await SQLiteStore.create({
+  const store = new SQLiteStore({
     dbPath: path.join(process.cwd(), '.codeatlas', 'db.sqlite'),
   });
 

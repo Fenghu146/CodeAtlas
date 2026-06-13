@@ -9,7 +9,7 @@ export async function askCommand(
   question: string,
   options: { format?: string; mode?: 'quick' | 'deep'; session?: string } = {},
 ) {
-  const store = await SQLiteStore.create({
+  const store = new SQLiteStore({
     dbPath: path.join(process.cwd(), '.codeatlas', 'db.sqlite'),
   });
 

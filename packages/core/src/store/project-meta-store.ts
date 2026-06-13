@@ -1,25 +1,18 @@
 // ============================================================
-// Project Meta Store - Manages project metadata
+// Project Meta Store - Manages scan metadata
 // ============================================================
-// Extracted from SQLiteStore for better separation of concerns.
-// Handles: get/set metadata, scan info persistence.
 
-import type { Database } from 'sql.js';
+import type { SQLiteStore } from './sqlite-store.js';
 
-/**
- * Manages project-level metadata (scan info, config, etc.).
- * Self-contained: only touches the project_meta table.
- */
 export class ProjectMetaStore {
-  private db: Database;
+  private store: SQLiteStore;
 
-  constructor(db: Database) {
-    this.db = db;
+  constructor(store: SQLiteStore) {
+    this.store = store;
   }
 
-  /** Create project_meta table if not exists */
   initSchema(): void {
-    this.db.run(`
+    this.store.executeExec(`
       CREATE TABLE IF NOT EXISTS project_meta (
         key         TEXT PRIMARY KEY,
         value       TEXT
@@ -27,18 +20,15 @@ export class ProjectMetaStore {
     `);
   }
 
-  /** Get metadata value */
   getMeta(key: string): string | undefined {
-    const row = this.queryOne('SELECT value FROM project_meta WHERE key = ?', [key]);
-    return row?.value;
+    const rows = this.store.executeQuery('SELECT value FROM project_meta WHERE key = ?', [key]);
+    return rows[0]?.value;
   }
 
-  /** Set metadata value */
   setMeta(key: string, value: string): void {
-    this.db.run('INSERT OR REPLACE INTO project_meta (key, value) VALUES (?, ?)', [key, value]);
+    this.store.executeStatement('INSERT OR REPLACE INTO project_meta (key, value) VALUES (?, ?)', [key, value]);
   }
 
-  /** Get last scan info */
   getLastScanInfo(): { path?: string; timestamp?: string; languages?: string[] } {
     return {
       path: this.getMeta('last_scan_path'),
@@ -47,19 +37,9 @@ export class ProjectMetaStore {
     };
   }
 
-  /** Save scan info */
   saveScanInfo(projectPath: string, languages: string[]): void {
     this.setMeta('last_scan_path', projectPath);
     this.setMeta('last_scan_timestamp', new Date().toISOString());
     this.setMeta('last_scan_languages', languages.join(','));
-  }
-
-  // Private helper
-  private queryOne(sql: string, params: any[] = []): Record<string, any> | undefined {
-    const stmt = this.db.prepare(sql);
-    if (params.length > 0) stmt.bind(params);
-    const row = stmt.step() ? stmt.getAsObject() : undefined;
-    stmt.free();
-    return row;
   }
 }

@@ -40,7 +40,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Initialize store (async) and set on providers when ready
   const dbPath = path.join(workspaceRoot, '.codeatlas', 'db.sqlite');
-  SQLiteStore.create({ dbPath }).then(initializedStore => {
+  new SQLiteStore({ dbPath }).then(initializedStore => {
     store = initializedStore;
     structureProvider.setStore(store, workspaceRoot);
     layersProvider.setStore(store);

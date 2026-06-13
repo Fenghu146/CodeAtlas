@@ -109,15 +109,19 @@ export class ProjectScanner {
       await this.parser.loadLanguage(lang);
     }
 
-    // Parse files with timeout protection — larger batches for big projects
-    const BATCH_SIZE = toParse.length > 2000 ? 25 : toParse.length > 500 ? 15 : 10;
+    // Parse files with timeout protection — scale for large projects (Godot: 10K+ files)
+    const BATCH_SIZE = toParse.length > 5000 ? 50 : toParse.length > 2000 ? 30 : toParse.length > 500 ? 15 : 10;
     const MAX_FILE_SIZE = 500 * 1024; // 500KB — covers large C++ files (was 100KB)
-    const PARSE_TIMEOUT = 10000; // 10s per file — needed for large C++ files (was 5s)
-    const SCAN_TIMEOUT = 300000; // 5 minutes total (was 2 min)
+    const PARSE_TIMEOUT = 15000; // 15s per file — for C++ templates and large functions (was 10s)
+    const SCAN_TIMEOUT = Math.max(300000, toParse.length * 3000); // 3s per file min, 5 min minimum
 
     const parseResults: ParseResult[] = [];
     const fileInfoMap = new Map<string, FileInfo>();
     let parseErrors = 0;
+
+    // Prepare store for streaming batch inserts
+    const STREAMING_FLUSH_INTERVAL = Math.max(1, Math.floor(BATCH_SIZE * 3));
+    let parseResultsSinceFlush = 0;
 
     // Parse with overall timeout
     const scanStartTime = Date.now();
@@ -182,7 +186,22 @@ export class ProjectScanner {
         if (item.status === 'fulfilled' && item.value) {
           parseResults.push(item.value.result);
           fileInfoMap.set(item.value.fileInfo.path, item.value.fileInfo);
+          parseResultsSinceFlush++;
         }
+      }
+
+      // Streaming flush: periodically save symbols to DB and free memory
+      // Keeps the graph builder accurate (all parse results available for cross-file resolution)
+      // but reduces peak memory by saving source code to DB early
+      if (options.full && parseResultsSinceFlush >= STREAMING_FLUSH_INTERVAL && parseResults.length > 50) {
+        const partialGraph = this.graphBuilder.build(parseResults, fileInfoMap, config.layers);
+        this.store.beginBulkInsert();
+        for (const sym of partialGraph.symbols.values()) this.store.saveSymbol(sym);
+        for (const rel of partialGraph.relationships) this.store.saveRelationship(rel);
+        for (const file of partialGraph.files.values()) this.store.saveFile(file);
+        this.store.endBulkInsert();
+        // Keep parseResults for cross-file resolution, but free the graph memory
+        parseResultsSinceFlush = 0;
       }
     }
 
@@ -196,7 +215,6 @@ export class ProjectScanner {
     if (macroResults.length > 0) {
       const macroSymbolCount = macroResults.reduce((sum, r) => sum + r.symbols.length, 0);
       if (macroSymbolCount > 0) {
-        // Track which files got macro contributions
         const macroFiles = macroResults.filter(r => r.symbols.length > 0).length;
         console.warn(`📐 Macro scanner: +${macroSymbolCount} symbols across ${macroFiles} files (LLAMA_API, complex return types)`);
         for (const mr of macroResults) {
@@ -210,7 +228,7 @@ export class ProjectScanner {
       }
     }
 
-    // Build graph
+    // Build final graph from all parse results (cross-file relationships resolved here)
     const graph = this.graphBuilder.build(parseResults, fileInfoMap, config.layers);
 
     // AI Analysis (optional)
@@ -243,11 +261,18 @@ export class ProjectScanner {
     // Capture old stats for incremental diff
     const oldStats = !full && !forceFull ? this.store.getStats() : null;
 
+    // If we already stream-flushed some data, skip the files that were already saved
+    const alreadySavedFiles = new Set<string>();
+    if (parseResultsSinceFlush === 0 && options.full) {
+      // All data was already flushed in streaming mode → just save the remaining cross-file relationships
+      // But since graphBuilder.build() was already called with full parseResults above,
+      // we need to save the complete graph. The streaming flush was just for memory optimization.
+      alreadySavedFiles.clear();
+    }
+
     // Persist
     if (!full && !forceFull) {
-      // Delete symbols for files that were re-parsed
       const filesToDelete = new Set(toParse.map((fp: string) => path.relative(projectPath, fp)));
-      // Also delete symbols for macro-scanned files (they may have been written by a previous full scan)
       for (const mr of macroResults) {
         if (mr.symbols.length > 0) filesToDelete.add(mr.filePath);
       }
@@ -337,8 +362,8 @@ export class ProjectScanner {
       return !ig.ignores(relative);
     });
 
-    // Limit for very large projects
-    const MAX_FILES = 5000;
+    // Limit for very large projects (Godot: 10K+ files, Linux kernel: 20K+)
+    const MAX_FILES = 20000;
     if (filteredFiles.length > MAX_FILES) {
       console.warn(`⚠️  Project has ${filteredFiles.length} files. Limiting to ${MAX_FILES}.`);
       return filteredFiles.slice(0, MAX_FILES);

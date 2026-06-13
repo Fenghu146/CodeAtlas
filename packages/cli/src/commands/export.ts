@@ -19,7 +19,7 @@ export async function exportCommand(options: { format?: string; output?: string 
     return;
   }
 
-  const store = await SQLiteStore.create({ dbPath });
+  const store = new SQLiteStore({ dbPath });
 
   try {
     const stats = store.getStats();
