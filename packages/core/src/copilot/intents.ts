@@ -142,7 +142,11 @@ const INTENT_PATTERNS: IntentPattern[] = [
     priority: 6,
     needsTarget: false,
     patterns: [
-      /(?:architecture|structure|design|pattern|layer|module\s+structure)/i,
+      /architecture/i,
+      /architectural/i,
+      /(?:structure|design|pattern|layer)/i,
+      /(?:module\s+structure)/i,
+      /(?:optimization|optimize|performance)/i,
       /(?:how\s+is\s+(?:this|the)\s+(?:project|app|codebase|code)\s+(?:organized|structured|designed|architected))/i,
       /(?:架构|结构|分层|模块|设计模式)/,
       /(?:怎么组织|如何组织|项目结构)/,

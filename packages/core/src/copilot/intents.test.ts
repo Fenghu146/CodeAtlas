@@ -114,6 +114,23 @@ describe('recognizeIntent', () => {
       const intent = recognizeIntent('这个项目的架构是什么');
       expect(intent.type).toBe('architecture');
     });
+
+    it('should recognize "architectural patterns" (adjective form)', () => {
+      const intent = recognizeIntent('What are the architectural patterns in this project?');
+      expect(intent.type).toBe('architecture');
+      expect(intent.confidence).toBeGreaterThanOrEqual(0.5);
+    });
+
+    it('should recognize "optimization areas" as architecture-related', () => {
+      const intent = recognizeIntent('What are the key optimization areas for this codebase?');
+      expect(intent.type).toBe('architecture');
+    });
+
+    it('should have high confidence with multiple architecture signals', () => {
+      const intent = recognizeIntent('What are the architectural patterns and potential optimization areas in this Vue 2 codebase?');
+      expect(intent.type).toBe('architecture');
+      expect(intent.confidence).toBeGreaterThan(0.6);
+    });
   });
 
   // ---- call_chain ----

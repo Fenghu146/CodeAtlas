@@ -6,8 +6,8 @@ import path from 'path';
 import fs from 'fs';
 import { SQLiteStore } from '@codeatlas/core';
 
-export async function statusCommand() {
-  const projectPath = process.cwd();
+export async function statusCommand(options?: { project?: string }) {
+  const projectPath = path.resolve(options?.project || process.cwd());
   const dbDir = path.join(projectPath, '.codeatlas');
   const dbPath = path.join(dbDir, 'db.sqlite');
 

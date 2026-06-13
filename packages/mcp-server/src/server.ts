@@ -76,17 +76,29 @@ async function initStore() {
     }, store);
   }
 
-  // Start file watcher if enabled
+  // Start file watcher if enabled (--watch flag, no extra config gate)
   if (watchMode) {
-    const config = loadConfig(projectPath);
-    if (config.mcp?.watchChanges) {
-      watcher = new FileWatcher(projectPath, scanner);
-      await watcher.start();
+    watcher = new FileWatcher(projectPath, scanner);
+    await watcher.start();
 
-      watcher.on('update', (result: any) => {
-        console.error(`Graph updated: ${result.symbolsFound} symbols`);
-      });
-    }
+    watcher.on('update', (result: any) => {
+      // Send structured JSON notification to MCP client via stderr
+      console.error(JSON.stringify({
+        type: 'graph_update',
+        filesScanned: result.filesScanned,
+        symbolsFound: result.symbolsFound,
+        relationshipsFound: result.relationshipsFound,
+        duration: result.duration,
+      }));
+    });
+
+    watcher.on('scanStart', (changes: any[]) => {
+      console.error(JSON.stringify({ type: 'scan_start', filesChanged: changes.length }));
+    });
+
+    watcher.on('error', (err: Error) => {
+      console.error(JSON.stringify({ type: 'watch_error', message: err.message }));
+    });
   }
 }
 

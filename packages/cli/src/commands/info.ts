@@ -5,9 +5,10 @@
 import path from 'path';
 import { SQLiteStore } from '@codeatlas/core';
 
-export async function infoCommand(symbolId: string) {
+export async function infoCommand(symbolId: string, options?: { project?: string }) {
+  const projectPath = path.resolve(options?.project || process.cwd());
   const store = await SQLiteStore.create({
-    dbPath: path.join(process.cwd(), '.codeatlas', 'db.sqlite'),
+    dbPath: path.join(projectPath, '.codeatlas', 'db.sqlite'),
   });
 
   try {

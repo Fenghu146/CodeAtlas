@@ -144,41 +144,13 @@ export class SQLiteStore {
     // Annotations table (delegated to AnnotationStore)
     this._annotations.initSchema();
 
-    // FTS5 index
+    // Indexes for symbol search (LIKE-based, always available in sql.js WASM)
     try {
-      this.db.run(`
-        CREATE VIRTUAL TABLE IF NOT EXISTS symbols_fts USING fts5(
-          name, doc_comment, source_code, ai_summary,
-          content='symbols',
-          content_rowid='rowid',
-          tokenize='porter unicode61'
-        )
-      `);
-
-      this.db.run(`
-        CREATE TRIGGER IF NOT EXISTS symbols_ai AFTER INSERT ON symbols BEGIN
-          INSERT INTO symbols_fts(rowid, name, doc_comment, source_code, ai_summary)
-          VALUES (new.rowid, new.name, new.doc_comment, new.source_code, new.ai_summary);
-        END
-      `);
-
-      this.db.run(`
-        CREATE TRIGGER IF NOT EXISTS symbols_ad AFTER DELETE ON symbols BEGIN
-          INSERT INTO symbols_fts(symbols_fts, rowid, name, doc_comment, source_code, ai_summary)
-          VALUES ('delete', old.rowid, old.name, old.doc_comment, old.source_code, old.ai_summary);
-        END
-      `);
-
-      this.db.run(`
-        CREATE TRIGGER IF NOT EXISTS symbols_au AFTER UPDATE ON symbols BEGIN
-          INSERT INTO symbols_fts(symbols_fts, rowid, name, doc_comment, source_code, ai_summary)
-          VALUES ('delete', old.rowid, old.name, old.doc_comment, old.source_code, old.ai_summary);
-          INSERT INTO symbols_fts(rowid, name, doc_comment, source_code, ai_summary)
-          VALUES (new.rowid, new.name, new.doc_comment, new.source_code, new.ai_summary);
-        END
-      `);
+      this.db.run('CREATE INDEX IF NOT EXISTS idx_symbols_name ON symbols(name)');
+      this.db.run('CREATE INDEX IF NOT EXISTS idx_symbols_kind ON symbols(kind)');
+      this.db.run('CREATE INDEX IF NOT EXISTS idx_symbols_layer ON symbols(layer)');
     } catch {
-      // FTS5 not available in sql.js WASM, fallback to LIKE search (silent)
+      // Indexes may already exist or not be available
     }
   }
 
@@ -267,30 +239,16 @@ export class SQLiteStore {
     return row ? this.rowToSymbol(row) : undefined;
   }
 
-  /** Search symbols by name (FTS or LIKE fallback) */
+  /** Search symbols by name (LIKE-based, always available) */
   searchSymbols(query: string, options?: { kind?: SymbolKind; layer?: Layer; limit?: number }): Symbol[] {
     const limit = options?.limit ?? 50;
-    let rows: Record<string, any>[];
-
-    // Try FTS5 first
-    try {
-      rows = this.queryAll(`
-        SELECT s.* FROM symbols s
-        JOIN symbols_fts fts ON s.rowid = fts.rowid
-        WHERE symbols_fts MATCH ?
-        ORDER BY rank
-        LIMIT ?
-      `, [query, limit]);
-    } catch {
-      // Fallback to LIKE (also used for empty/broad queries)
-      const like = `%${query}%`;
-      rows = this.queryAll(`
-        SELECT * FROM symbols
-        WHERE name LIKE ? OR doc_comment LIKE ?
-        ORDER BY name
-        LIMIT ?
-      `, [like, like, limit]);
-    }
+    const like = `%${query}%`;
+    let rows = this.queryAll(`
+      SELECT * FROM symbols
+      WHERE name LIKE ? OR doc_comment LIKE ?
+      ORDER BY name
+      LIMIT ?
+    `, [like, like, limit]);
 
     // Apply additional filters
     if (options?.kind) rows = rows.filter(r => r.kind === options.kind);
@@ -525,13 +483,6 @@ export class SQLiteStore {
 
   /** Save an entire graph to the store (optimized with batch operations) */
   saveGraph(graph: CodeGraph): void {
-    // Disable FTS triggers during bulk insert for faster writes
-    try {
-      this.db.run('DROP TRIGGER IF EXISTS symbols_ai');
-      this.db.run('DROP TRIGGER IF EXISTS symbols_ad');
-      this.db.run('DROP TRIGGER IF EXISTS symbols_au');
-    } catch { /* ignore */ }
-
     this.run('BEGIN TRANSACTION');
     try {
       // Batch insert symbols
@@ -589,56 +540,10 @@ export class SQLiteStore {
       throw err;
     }
 
-    // Rebuild FTS index after bulk insert
-    this.rebuildFTSIndex();
+    // Clean up old FTS table if it exists (from previous versions with FTS5/FTS4)
+    try { this.db.run('DROP TABLE IF EXISTS symbols_fts'); } catch { /* ignore */ }
 
     this.persist();
-  }
-
-  /** Rebuild FTS5 index (call after bulk inserts) */
-  private rebuildFTSIndex(): void {
-    try {
-      // Recreate FTS table
-      this.db.run('DROP TABLE IF EXISTS symbols_fts');
-      this.db.run(`
-        CREATE VIRTUAL TABLE symbols_fts USING fts5(
-          name, doc_comment, source_code, ai_summary,
-          content='symbols',
-          content_rowid='rowid',
-          tokenize='porter unicode61'
-        )
-      `);
-
-      // Repopulate FTS index
-      this.db.run(`
-        INSERT INTO symbols_fts(rowid, name, doc_comment, source_code, ai_summary)
-        SELECT rowid, name, doc_comment, source_code, ai_summary FROM symbols
-      `);
-
-      // Recreate triggers
-      this.db.run(`
-        CREATE TRIGGER symbols_ai AFTER INSERT ON symbols BEGIN
-          INSERT INTO symbols_fts(rowid, name, doc_comment, source_code, ai_summary)
-          VALUES (new.rowid, new.name, new.doc_comment, new.source_code, new.ai_summary);
-        END
-      `);
-      this.db.run(`
-        CREATE TRIGGER symbols_ad AFTER DELETE ON symbols BEGIN
-          INSERT INTO symbols_fts(symbols_fts, rowid, name, doc_comment, source_code, ai_summary)
-          VALUES ('delete', old.rowid, old.name, old.doc_comment, old.source_code, old.ai_summary);
-        END
-      `);
-      this.db.run(`
-        CREATE TRIGGER symbols_au AFTER UPDATE ON symbols BEGIN
-          INSERT INTO symbols_fts(symbols_fts, rowid, name, doc_comment, source_code, ai_summary)
-          VALUES ('delete', old.rowid, old.name, old.doc_comment, old.source_code, old.ai_summary);
-          INSERT INTO symbols_fts(rowid, name, doc_comment, source_code, ai_summary)
-          VALUES (new.rowid, new.name, new.doc_comment, new.source_code, new.ai_summary);
-        END
-      `);
-    } catch {
-      // FTS5 might not be available in WASM build, silently skip
-    }
   }
 
   // ========================

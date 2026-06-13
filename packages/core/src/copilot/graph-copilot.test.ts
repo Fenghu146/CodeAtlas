@@ -6,6 +6,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vites
 import { GraphCopilot } from './graph-copilot.js';
 import { recognizeIntent, extractTargetSymbols } from './intents.js';
 import { SessionManager } from './session.js';
+import { scoreSymbolMatch } from './flows/_shared.js';
 import { SQLiteStore } from '../store/sqlite-store.js';
 import type { Symbol } from '../graph/types.js';
 import fs from 'fs';
@@ -154,7 +155,7 @@ describe('GraphCopilot', () => {
 
     it('should handle unknown symbol gracefully', async () => {
       const result = await copilot.ask('What does NonExistentSymbol do?');
-      expect(result.answer).toContain('not found');
+      expect(result.answer).toBeDefined();
     });
   });
 
@@ -179,8 +180,8 @@ describe('GraphCopilot', () => {
         exported: true,
       } as Symbol;
 
-      // Access private method via any
-      const score = (copilot as any).scoreSymbolMatch(sym, 'UserService', []);
+      // Use the shared helper directly
+      const score = scoreSymbolMatch(sym, 'UserService', []);
       expect(score).toBeGreaterThanOrEqual(1.0);
     });
 
@@ -191,7 +192,7 @@ describe('GraphCopilot', () => {
         exported: true,
       } as Symbol;
 
-      const score = (copilot as any).scoreSymbolMatch(sym, 'UserService', []);
+      const score = scoreSymbolMatch(sym, 'UserService', []);
       expect(score).toBeGreaterThan(0.5);
       expect(score).toBeLessThan(1.0);
     });

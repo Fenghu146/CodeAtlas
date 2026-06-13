@@ -76,10 +76,29 @@ export class ProjectScanner {
       exclude: [...(options.exclude || []), ...(config.scan?.exclude || [])],
     });
 
+    // Detect non-essential directories (examples, benchmarks, fixtures) and warn
+    this.detectNonEssentialDirs(projectPath, files);
+
     // Detect changes
     const { toParse, toSkip } = forceFull
       ? { toParse: files, toSkip: [] as string[] }
       : this.detectChanges(files, projectPath);
+
+    // Validate paths before processing — skip problematic ones
+    const MAX_PATH_LENGTH = 260; // Windows MAX_PATH
+    let invalidPaths = 0;
+    const validToParse = toParse.filter((fp) => {
+      // Skip overly long paths
+      if (fp.length > MAX_PATH_LENGTH) { invalidPaths++; return false; }
+      // Skip paths with null bytes
+      if (fp.includes('\0')) { invalidPaths++; return false; }
+      // Verify path exists (handle glob edge cases)
+      try { fs.accessSync(fp, fs.constants.R_OK); return true; }
+      catch { invalidPaths++; return false; }
+    });
+    if (invalidPaths > 0) {
+      console.warn(`⚠️  Skipping ${invalidPaths} invalid/inaccessible path(s)`);
+    }
 
     // Load required languages
     const languagesNeeded = new Set(
@@ -279,6 +298,49 @@ export class ProjectScanner {
     }
 
     return filteredFiles;
+  }
+
+  /**
+   * Detect non-essential directories (examples, benchmarks, fixtures, etc.)
+   * and warn the user if they make up a significant portion of the scan.
+   */
+  private detectNonEssentialDirs(projectPath: string, files: string[]): void {
+    const NON_ESSENTIAL_DIRS = [
+      'examples', 'example', 'benchmarks', 'benchmark', 'demos', 'demo',
+      'samples', 'sample', 'fixtures', 'test/fixtures', 'tests/fixtures',
+      'test_data', 'mock', 'mocks', 'stubs',
+    ];
+
+    const dirCount = new Map<string, number>();
+    for (const file of files) {
+      const relative = path.relative(projectPath, file).replace(/\\/g, '/');
+      for (const dir of NON_ESSENTIAL_DIRS) {
+        if (relative === dir || relative.startsWith(dir + '/')) {
+          dirCount.set(dir, (dirCount.get(dir) ?? 0) + 1);
+          break;
+        }
+      }
+    }
+
+    // Filter to directories with significant file count
+    const significant = Array.from(dirCount.entries())
+      .filter(([, count]) => count >= 50)
+      .sort((a, b) => b[1] - a[1]);
+
+    if (significant.length > 0) {
+      const totalNonEssential = significant.reduce((sum, [, count]) => sum + count, 0);
+      const pct = Math.round((totalNonEssential / files.length) * 100);
+      if (pct >= 10) {
+        console.warn('');
+        console.warn(`⚠️  Found non-essential directories (${totalNonEssential} files, ${pct}% of scan):`);
+        for (const [dir, count] of significant) {
+          console.warn(`     📁 ${dir}/ — ${count} files`);
+        }
+        console.warn(`   💡 Exclude them to speed up scanning:`);
+        console.warn(`      Add to .codeatlas.yaml → scan.exclude: [${significant.map(([d]) => `"${d}/**"`).join(', ')}]`);
+        console.warn('');
+      }
+    }
   }
 
   /**

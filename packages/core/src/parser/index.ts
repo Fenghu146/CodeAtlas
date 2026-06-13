@@ -193,7 +193,7 @@ export class CodeParser {
 
       if (isMethod) {
         // Parse as method
-        const symbol = this.nodeToSymbol(node, sourceCode);
+        const symbol = this.nodeToSymbol(node, sourceCode, lang);
         if (symbol) {
           symbol.kind = 'method';
           // Set parentName from the class we found
@@ -213,13 +213,13 @@ export class CodeParser {
         }
       } else if (symbolKinds.has(node.type)) {
         // Parse as function
-        const symbol = this.nodeToSymbol(node, sourceCode);
+        const symbol = this.nodeToSymbol(node, sourceCode, lang);
         if (symbol) {
           symbols.push(symbol);
         }
       }
     } else if (symbolKinds.has(node.type)) {
-      const symbol = this.nodeToSymbol(node, sourceCode);
+      const symbol = this.nodeToSymbol(node, sourceCode, lang);
       if (symbol) {
         symbols.push(symbol);
       }
@@ -266,7 +266,7 @@ export class CodeParser {
   }
 
   /** Convert a syntax node to a ParsedSymbol */
-  private nodeToSymbol(node: SyntaxNode, sourceCode: string): ParsedSymbol | null {
+  private nodeToSymbol(node: SyntaxNode, sourceCode: string, lang?: string): ParsedSymbol | null {
     const kind = this.mapNodeKind(node.type);
     if (!kind) return null;
 
@@ -291,7 +291,7 @@ export class CodeParser {
     const name = sourceCode.slice(nameNode.startIndex, nameNode.endIndex);
     const sourceSlice = sourceCode.slice(node.startIndex, node.endIndex);
     const docComment = this.extractDocComment(node, sourceCode);
-    const exported = this.isExported(node);
+    const exported = this.isExported(node, sourceCode, lang);
 
     // Detect parent (class containing method)
     let parentName: string | undefined;
@@ -368,10 +368,58 @@ export class CodeParser {
   }
 
   /** Check if the node is exported */
-  private isExported(node: SyntaxNode): boolean {
+  private isExported(node: SyntaxNode, sourceCode?: string, lang?: string): boolean {
     const parent = node.parent;
     if (!parent) return false;
-    return parent.type === 'export_statement' || parent.type === 'export_default_declaration';
+
+    // JS/TS: explicit export keyword
+    if (parent.type === 'export_statement' || parent.type === 'export_default_declaration') {
+      return true;
+    }
+
+    // C/C++: externally visible by default, unless 'static' or file-scoped
+    if (lang === 'c' || lang === 'cpp') {
+      // function_definition, struct_specifier, class_specifier at file scope are exported
+      if (['function_definition', 'struct_specifier', 'class_specifier',
+           'template_function', 'template_class', 'type_definition'].includes(node.type)) {
+        // Check for 'static' storage class specifier in the node or its declarator
+        if (sourceCode && this.hasStaticSpecifier(node, sourceCode)) {
+          return false; // static functions are file-local
+        }
+        return true;
+      }
+      // declaration nodes: check for extern vs static
+      if (node.type === 'declaration' || node.type === 'linked_declaration') {
+        if (sourceCode && this.hasStaticSpecifier(node, sourceCode)) return false;
+        return true;
+      }
+      // preprocessor defines are global
+      if (node.type === 'preproc_def' || node.type === 'preproc_function_def') return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Check if a C/C++ AST node carries a 'static' storage class specifier.
+   */
+  private hasStaticSpecifier(node: SyntaxNode, sourceCode: string): boolean {
+    for (const child of node.children) {
+      if (child.type === 'storage_class_specifier') {
+        const text = sourceCode.slice(child.startIndex, child.endIndex);
+        if (text === 'static') return true;
+      }
+      // For function_definition with declarator, also check children of declarator children
+      if (child.type === 'function_declarator' || child.type === 'pointer_declarator' || child.type === 'init_declarator') {
+        for (const sub of child.children) {
+          if (sub.type === 'storage_class_specifier') {
+            const text = sourceCode.slice(sub.startIndex, sub.endIndex);
+            if (text === 'static') return true;
+          }
+        }
+      }
+    }
+    return false;
   }
 
   /**

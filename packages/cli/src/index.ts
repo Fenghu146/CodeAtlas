@@ -56,6 +56,7 @@ program
   .option('-k, --kind <kind>', 'Filter by symbol kind')
   .option('-l, --layer <layer>', 'Filter by architectural layer')
   .option('-n, --limit <number>', 'Max results', '20')
+  .option('-p, --project <path>', 'Project path (default: cwd)')
   .action(async (query, options) => {
     const { searchCommand } = await import('./commands/search.js');
     await searchCommand(query, options);
@@ -67,9 +68,10 @@ program
 program
   .command('info <symbol>')
   .description('Show detailed info about a symbol')
-  .action(async (symbolId) => {
+  .option('-p, --project <path>', 'Project path (default: cwd)')
+  .action(async (symbolId, options) => {
     const { infoCommand } = await import('./commands/info.js');
-    await infoCommand(symbolId);
+    await infoCommand(symbolId, options);
   });
 
 // ========================
@@ -78,9 +80,10 @@ program
 program
   .command('callers <symbol>')
   .description('Find all callers of a symbol')
-  .action(async (symbolId) => {
+  .option('-p, --project <path>', 'Project path (default: cwd)')
+  .action(async (symbolId, options) => {
     const { callersCommand } = await import('./commands/callers.js');
-    await callersCommand(symbolId);
+    await callersCommand(symbolId, options);
   });
 
 // ========================
@@ -89,9 +92,10 @@ program
 program
   .command('callees <symbol>')
   .description('Find all callees of a symbol')
-  .action(async (symbolId) => {
+  .option('-p, --project <path>', 'Project path (default: cwd)')
+  .action(async (symbolId, options) => {
     const { calleesCommand } = await import('./commands/callees.js');
-    await calleesCommand(symbolId);
+    await calleesCommand(symbolId, options);
   });
 
 // ========================
@@ -101,6 +105,7 @@ program
   .command('impact <symbol>')
   .description('Analyze the impact of changing a symbol')
   .option('-d, --depth <number>', 'Max traversal depth', '3')
+  .option('-p, --project <path>', 'Project path (default: cwd)')
   .action(async (symbolId, options) => {
     const { impactCommand } = await import('./commands/impact.js');
     await impactCommand(symbolId, options);
@@ -115,6 +120,7 @@ program
   .option('--by-file', 'Show compact file-level aggregation table (like cloc)')
   .option('--sort <field>', 'Sort files by (syms|complexity|name)', 'syms')
   .option('-n, --limit <number>', 'Max files to show', '25')
+  .option('-p, --project <path>', 'Project path (default: cwd)')
   .action(async (options) => {
     const { layersCommand } = await import('./commands/layers.js');
     await layersCommand(options);
@@ -139,9 +145,10 @@ program
 program
   .command('status')
   .description('Show code graph index status')
-  .action(async () => {
+  .option('-p, --project <path>', 'Project path (default: cwd)')
+  .action(async (options) => {
     const { statusCommand } = await import('./commands/status.js');
-    await statusCommand();
+    await statusCommand(options);
   });
 
 // ========================
@@ -179,6 +186,7 @@ program
   .description('Analyze dependency health: circular deps, unused/unlisted packages')
   .option('-f, --format <format>', 'Output format (text|json)', 'text')
   .option('--circular', 'Only show circular dependencies')
+  .option('-p, --project <path>', 'Project path (default: cwd)')
   .action(async (options) => {
     const { depsCommand } = await import('./commands/deps.js');
     await depsCommand(options);
@@ -196,6 +204,7 @@ program
   .option('--smart', 'Use graph-aware context (default: true)')
   .option('--no-smart', 'Use traditional full-source mode')
   .option('--budget <tokens>', 'Token budget for smart mode', '4000')
+  .option('-p, --project <path>', 'Project path (default: cwd)')
   .action(async (options) => {
     const { reviewCommand } = await import('./commands/review.js');
     await reviewCommand(options);
@@ -239,9 +248,27 @@ program
   .description('Find shortest path between two symbols')
   .option('-d, --depth <number>', 'Max path length', '6')
   .option('-f, --format <format>', 'Output format (text|json)', 'text')
+  .option('-p, --project <path>', 'Project path (default: cwd)')
   .action(async (source, target, options) => {
     const { pathCommand } = await import('./commands/path.js');
     await pathCommand(source, target, options);
+  });
+
+// ========================
+// hotspots command
+// ========================
+program
+  .command('hotspots')
+  .description('Find complex/high-risk code symbols (callers, callees, line count)')
+  .option('-n, --limit <number>', 'Max results to show', '10')
+  .option('--min-score <number>', 'Minimum score threshold', '0')
+  .option('-k, --kind <kind>', 'Filter by symbol kind (function|class|method|module)')
+  .option('-l, --layer <layer>', 'Filter by architectural layer (interface|business|data|utility)')
+  .option('-f, --format <format>', 'Output format (text|json)', 'text')
+  .option('-p, --project <path>', 'Project path (default: cwd)')
+  .action(async (options) => {
+    const { hotspotsCommand } = await import('./commands/hotspots.js');
+    await hotspotsCommand(options);
   });
 
 // ========================
@@ -310,6 +337,7 @@ program
   .description('Detect code smells and generate refactoring suggestions')
   .option('--type <type>', 'Detect specific smell type (god-class|feature-envy|shotgun-surgery|dead-code|high-coupling)')
   .option('-f, --format <format>', 'Output format (text|json)', 'text')
+  .option('-p, --project <path>', 'Project path (default: cwd)')
   .action(async (options) => {
     const { refactorCommand } = await import('./commands/refactor.js');
     await refactorCommand(options);
@@ -354,6 +382,7 @@ program
   .description('Trace call chain from an entry point')
   .option('-d, --depth <number>', 'Max depth', '5')
   .option('-f, --format <format>', 'Output format (text|mermaid)', 'text')
+  .option('-p, --project <path>', 'Project path (default: cwd)')
   .action(async (symbol, options) => {
     const { flowCommand } = await import('./commands/flow.js');
     await flowCommand(symbol, options);
@@ -368,6 +397,7 @@ program
   .option('-f, --format <format>', 'Output format (text|json)', 'text')
   .option('-m, --mode <mode>', 'Analysis depth (quick|deep)', 'quick')
   .option('-s, --session <id>', 'Session ID for multi-turn memory')
+  .option('-p, --project <path>', 'Project path (default: cwd)')
   .action(async (question, options) => {
     const { askCommand } = await import('./commands/ask.js');
     await askCommand(question, options);
@@ -379,9 +409,10 @@ program
 program
   .command('coverage [symbol]')
   .description('Show test coverage mapping')
-  .action(async (symbol) => {
+  .option('-p, --project <path>', 'Project path (default: cwd)')
+  .action(async (symbol, options) => {
     const { coverageCommand } = await import('./commands/coverage.js');
-    await coverageCommand({ symbol });
+    await coverageCommand({ symbol, ...options });
   });
 
 // ========================
