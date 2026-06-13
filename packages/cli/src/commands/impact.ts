@@ -5,9 +5,10 @@
 import path from 'path';
 import { SQLiteStore, ImpactAnalyzer } from '@codeatlas/core';
 
-export async function impactCommand(symbolId: string, options: { depth?: string }) {
+export async function impactCommand(symbolId: string, options: { depth?: string; project?: string }) {
+  const projectPath = path.resolve(options?.project || process.cwd());
   const store = await SQLiteStore.create({
-    dbPath: path.join(process.cwd(), '.codeatlas', 'db.sqlite'),
+    dbPath: path.join(projectPath, '.codeatlas', 'db.sqlite'),
   });
 
   try {
@@ -27,17 +28,18 @@ export async function impactCommand(symbolId: string, options: { depth?: string 
     }
 
     if (!symbol) {
-      // Try searching by name (fuzzy match)
-      const results = store.searchSymbols(symbolId, { limit: 10 });
+      // Try searching by name — handle partial ID (filePath:name → just name)
+      const searchName = symbolId.includes(':') ? symbolId.split(':').pop()! : symbolId;
+      let results = store.searchSymbols(searchName, { limit: 20 });
 
       // Also try partial name matching
       if (results.length === 0) {
         const allSymbols = store.searchSymbols('', { limit: 5000 });
         const matches = allSymbols.filter(s =>
-          s.name.toLowerCase().includes(symbolId.toLowerCase()) ||
-          symbolId.toLowerCase().includes(s.name.toLowerCase())
+          s.name.toLowerCase().includes(searchName.toLowerCase()) ||
+          searchName.toLowerCase().includes(s.name.toLowerCase())
         );
-        results.push(...matches);
+        results = matches.slice(0, 20);
       }
 
       if (results.length === 1) {

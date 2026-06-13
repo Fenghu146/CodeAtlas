@@ -28,18 +28,17 @@ export async function calleesCommand(symbolId: string, options?: { project?: str
     }
 
     if (!symbol) {
-      // Try searching by name
-      const results = store.searchSymbols(symbolId, { limit: 5 });
+      // Try searching by name (handle partial ID format: filePath:name → extract name)
+      const searchName = symbolId.includes(':') ? symbolId.split(':').pop()! : symbolId;
+      const results = store.searchSymbols(searchName, { limit: 20 });
       if (results.length === 1) {
         symbol = results[0];
       } else if (results.length > 1) {
-        console.log(`\n🔍 Found ${results.length} symbols matching "${symbolId}":\n`);
-        for (const s of results) {
-          console.log(`  - ${s.id}`);
-          console.log(`    ${s.name} (${s.kind}) @ ${s.filePath}:${s.startLine}`);
-        }
-        console.log('\n  Please use the full ID\n');
-        return;
+        // Priority: exact name match > function/class > first result
+        const exactMatch = results.find(s => s.name === symbolId);
+        const preferred = results.filter(s => s.name === symbolId || s.kind === 'function' || s.kind === 'class');
+        const best = exactMatch ?? (preferred.length > 0 ? preferred[0] : results[0]);
+        symbol = best;
       }
     }
 

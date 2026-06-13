@@ -7,17 +7,19 @@ import { SQLiteStore } from '@codeatlas/core';
 
 export async function searchCommand(
   query: string,
-  options: { kind?: string; layer?: string; limit?: string },
+  options: { kind?: string; layer?: string; limit?: string; project?: string },
 ) {
+  const projectPath = path.resolve(options.project || process.cwd());
   const store = await SQLiteStore.create({
-    dbPath: path.join(process.cwd(), '.codeatlas', 'db.sqlite'),
+    dbPath: path.join(projectPath, '.codeatlas', 'db.sqlite'),
   });
 
   try {
+    const limit = Math.min(parseInt(options.limit || '20'), 200);
     const results = store.searchSymbols(query, {
       kind: options.kind as any,
       layer: options.layer as any,
-      limit: parseInt(options.limit || '20'),
+      limit,
     });
 
     if (results.length === 0) {

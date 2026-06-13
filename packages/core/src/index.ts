@@ -45,6 +45,7 @@ export type { ScanOptions, ScanResult } from './scanner/scanner.js';
 
 export { FileWatcher } from './scanner/file-watcher.js';
 export type { WatcherOptions, FileChangeEvent } from './scanner/file-watcher.js';
+export { scanProjectMacros, scanMacroDeclarations } from './scanner/macro-scanner.js';
 
 export { FoamExporter } from './export/foam-exporter.js';
 export type { FoamExportOptions } from './export/foam-exporter.js';

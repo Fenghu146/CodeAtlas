@@ -69,6 +69,12 @@ const EXTENSION_MAP: Record<string, string> = {
   '.c': 'c',
   '.h': 'c',
   '.hpp': 'cpp',
+  '.cc': 'cpp',
+  '.cxx': 'cpp',
+  '.hh': 'c',
+  '.hxx': 'cpp',
+  '.c++': 'cpp',
+  '.h++': 'c',
 };
 
 export function detectLanguage(filePath: string): string | null {

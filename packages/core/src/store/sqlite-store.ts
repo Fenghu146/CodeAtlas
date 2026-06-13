@@ -483,9 +483,15 @@ export class SQLiteStore {
 
   /** Save an entire graph to the store (optimized with batch operations) */
   saveGraph(graph: CodeGraph): void {
+    // Speed up bulk writes: disable sync, larger cache
+    try {
+      this.db.run('PRAGMA synchronous = OFF');
+      this.db.run('PRAGMA cache_size = -64000'); // 64MB cache for 39K+ symbols
+      this.db.run('PRAGMA page_size = 4096');
+    } catch { /* pragma may not be available in all environments */ }
+
     this.run('BEGIN TRANSACTION');
     try {
-      // Batch insert symbols
       const symbolStmt = this.db.prepare(`
         INSERT INTO symbols (id, name, kind, file_path, start_line, end_line, start_col, end_col,
                              source_code, language, layer, doc_comment, ai_summary, complexity, exported, metadata)

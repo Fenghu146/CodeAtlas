@@ -48,58 +48,68 @@ if (projectIdx !== -1 && args[projectIdx + 1]) {
 // Check for watch mode
 const watchMode = args.includes('--watch');
 
-// Track last scanned path for tools that don't accept path parameter
+// Shared state for the active project (may be changed by codeatlas_set_project)
 let lastScannedPath = projectPath;
-
-// Initialize store (async)
-const dbDir = path.join(projectPath, '.codeatlas');
 let store: SQLiteStore;
 let scanner: ProjectScanner;
 let watcher: FileWatcher | null = null;
 let sharedExplainer: ModuleExplainer | null = null;
 let sharedCopilot: GraphCopilot | null = null;
 
-async function initStore() {
-  store = await SQLiteStore.create({ dbPath: path.join(dbDir, 'db.sqlite') });
-  scanner = new ProjectScanner(store);
-  sharedCopilot = new GraphCopilot(store, projectPath);
+/**
+ * Initialize or switch to a project at the given path.
+ * Can be called multiple times to switch between projects.
+ */
+async function initForProject(newPath: string): Promise<string> {
+  const dbDir = path.join(path.resolve(newPath), '.codeatlas');
+  fs.mkdirSync(dbDir, { recursive: true });
 
-  // Initialize shared LLM client (connection pool)
-  const config = loadConfig(projectPath);
-  const aiConfig = getAIConfig(config);
-  if (aiConfig.provider) {
-    sharedExplainer = new ModuleExplainer({
-      provider: aiConfig.provider,
-      model: aiConfig.model,
-      apiKey: aiConfig.apiKey,
-      baseUrl: aiConfig.baseUrl,
-    }, store);
+  // Close previous store and watcher
+  if (store) {
+    if (watcher) { await watcher.stop(); watcher = null; }
+    store.close();
   }
 
-  // Start file watcher if enabled (--watch flag, no extra config gate)
+  const dbPath = path.join(dbDir, 'db.sqlite');
+  store = await SQLiteStore.create({ dbPath });
+  scanner = new ProjectScanner(store);
+  sharedCopilot = new GraphCopilot(store, newPath);
+  projectPath = newPath;
+  lastScannedPath = newPath;
+
+  // Reinitialize shared LLM client for the new project
+  const config = loadConfig(newPath);
+  const aiConfig = getAIConfig(config);
+  sharedExplainer = aiConfig.provider ? new ModuleExplainer({
+    provider: aiConfig.provider,
+    model: aiConfig.model,
+    apiKey: aiConfig.apiKey,
+    baseUrl: aiConfig.baseUrl,
+  }, store) : null;
+
+  // Start file watcher if --watch flag was given
   if (watchMode) {
-    watcher = new FileWatcher(projectPath, scanner);
+    watcher = new FileWatcher(newPath, scanner);
     await watcher.start();
-
     watcher.on('update', (result: any) => {
-      // Send structured JSON notification to MCP client via stderr
-      console.error(JSON.stringify({
-        type: 'graph_update',
-        filesScanned: result.filesScanned,
-        symbolsFound: result.symbolsFound,
-        relationshipsFound: result.relationshipsFound,
-        duration: result.duration,
-      }));
+      console.error(JSON.stringify({ type: 'graph_update', filesScanned: result.filesScanned, symbolsFound: result.symbolsFound, relationshipsFound: result.relationshipsFound, duration: result.duration }));
     });
-
     watcher.on('scanStart', (changes: any[]) => {
       console.error(JSON.stringify({ type: 'scan_start', filesChanged: changes.length }));
     });
-
     watcher.on('error', (err: Error) => {
       console.error(JSON.stringify({ type: 'watch_error', message: err.message }));
     });
   }
+
+  // Return summary
+  const stats = store.getStats();
+  return `✅ Switched to project: ${newPath}\n   Symbols: ${stats.symbols} | Files: ${stats.files} | Relationships: ${stats.relationships}`;
+}
+
+/** Wrapper for initial startup */
+async function initStore() {
+  return initForProject(projectPath);
 }
 
 // Create MCP Server
@@ -1771,6 +1781,29 @@ server.tool(
     // Execute
     const result = await orchestrator.execute(dag);
     return { content: [{ type: 'text' as const, text: result.summary }] };
+  },
+);
+
+// ============================================================
+// Tool: set_project — Switch to a different project
+// ============================================================
+server.tool(
+  'codeatlas_set_project',
+  'Switch the MCP server to a different project. All subsequent tools will use this project\'s code graph. Use this when working across multiple repositories without restarting the server.',
+  {
+    path: z.string().describe('Absolute path to the project directory'),
+  },
+  async ({ path: newPath }) => {
+    const resolved = path.resolve(newPath);
+    if (!fs.existsSync(resolved)) {
+      return { content: [{ type: 'text' as const, text: `❌ Path does not exist: ${resolved}` }] };
+    }
+    try {
+      const summary = await initForProject(resolved);
+      return { content: [{ type: 'text' as const, text: summary }] };
+    } catch (err: any) {
+      return { content: [{ type: 'text' as const, text: `❌ Failed to switch project: ${err.message}` }] };
+    }
   },
 );
 

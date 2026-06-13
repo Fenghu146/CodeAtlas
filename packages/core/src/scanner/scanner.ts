@@ -14,6 +14,7 @@ import { ModuleExplainer } from '../analyzer/module-explainer.js';
 import { loadConfig, getAIConfig } from '../config/config-loader.js';
 import type { FileInfo, CodeGraph } from '../graph/types.js';
 import type { ParseResult } from '../parser/index.js';
+import { scanProjectMacros } from './macro-scanner.js';
 
 export interface ScanOptions {
   projectPath: string;
@@ -108,11 +109,11 @@ export class ProjectScanner {
       await this.parser.loadLanguage(lang);
     }
 
-    // Parse files with timeout protection
-    const BATCH_SIZE = toParse.length > 500 ? 5 : toParse.length > 100 ? 10 : 15;
-    const MAX_FILE_SIZE = 100 * 1024;
-    const PARSE_TIMEOUT = 5000;
-    const SCAN_TIMEOUT = 120000; // 2 minutes total
+    // Parse files with timeout protection — larger batches for big projects
+    const BATCH_SIZE = toParse.length > 2000 ? 25 : toParse.length > 500 ? 15 : 10;
+    const MAX_FILE_SIZE = 500 * 1024; // 500KB — covers large C++ files (was 100KB)
+    const PARSE_TIMEOUT = 10000; // 10s per file — needed for large C++ files (was 5s)
+    const SCAN_TIMEOUT = 300000; // 5 minutes total (was 2 min)
 
     const parseResults: ParseResult[] = [];
     const fileInfoMap = new Map<string, FileInfo>();
@@ -187,6 +188,24 @@ export class ProjectScanner {
 
     if (parseErrors > 0) {
       console.warn(`⚠️  ${parseErrors} files failed to parse`);
+    }
+
+    // Macro scanner: detect C/C++ function declarations hidden behind macros (LLAMA_API, etc.)
+    const existingNames = new Set(parseResults.flatMap(r => r.symbols.map(s => s.name)));
+    const macroResults = scanProjectMacros(projectPath, validToParse, existingNames);
+    if (macroResults.length > 0) {
+      const macroSymbolCount = macroResults.reduce((sum, r) => sum + r.symbols.length, 0);
+      if (macroSymbolCount > 0) {
+        console.warn(`⚠️  Macro scanner found ${macroSymbolCount} additional C/C++ symbols (behind macros)`);
+        for (const mr of macroResults) {
+          const existing = parseResults.find(p => p.filePath === mr.filePath);
+          if (existing) {
+            existing.symbols.push(...mr.symbols);
+          } else {
+            parseResults.push(mr);
+          }
+        }
+      }
     }
 
     // Build graph
@@ -269,7 +288,8 @@ export class ProjectScanner {
 
     const supportedExtensions = [
       'js', 'jsx', 'mjs', 'cjs', 'ts', 'tsx', 'py', 'go', 'rs',
-      'java', 'rb', 'php', 'cs', 'c', 'h', 'cpp', 'hpp',
+      'java', 'rb', 'php', 'cs',
+      'c', 'h', 'cpp', 'hpp', 'cc', 'cxx', 'hh', 'hxx', 'c++', 'h++',
     ];
 
     const includePattern = options.include?.length

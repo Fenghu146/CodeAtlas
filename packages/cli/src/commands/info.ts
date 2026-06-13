@@ -29,7 +29,9 @@ export async function infoCommand(symbolId: string, options?: { project?: string
 
     if (!symbol) {
       // Search by name as fallback
-      const results = store.searchSymbols(symbolId, { limit: 20 });
+      // Handle partial ID format (filePath:name without line number): extract just the name
+      const searchName = symbolId.includes(':') ? symbolId.split(':').pop()! : symbolId;
+      const results = store.searchSymbols(searchName, { limit: 20 });
 
       if (results.length === 0) {
         console.log(`\n❌ Symbol "${symbolId}" not found\n`);
