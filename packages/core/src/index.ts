@@ -87,6 +87,9 @@ export type { TeamData, AnnotationData, ExportOptions } from './export/team-expo
 export { loadConfig, getAIConfig } from './config/config-loader.js';
 export type { CodeAtlasConfig, AIConfig } from './config/config-loader.js';
 
+export { logger } from './utils/logger.js';
+export type { LogLevel } from './utils/logger.js';
+
 export { SmartContextBuilder } from './analyzer/smart-context.js';
 export { BatchAnalyzer } from './analyzer/batch-analyzer.js';
 export { SmartCache } from './cache/smart-cache.js';

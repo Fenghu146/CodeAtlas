@@ -23,7 +23,7 @@ CodeAtlas 是一个代码结构分析 + 可视化工具，用 tree-sitter 解析
 |------|------|------|
 | **核心引擎** | TypeScript + Node.js | tree-sitter WASM 绑定成熟；和 VSCode 插件、MCP Server 同生态，代码可直接复用 |
 | **代码解析** | tree-sitter (web-tree-sitter) | 增量解析、多语言支持（JS/TS/Python/Go/Rust/Java...）、WASM 可在浏览器运行 |
-| **图谱存储** | SQLite + FTS5 | 零依赖、嵌入式、FTS5 全文搜索毫秒级响应、单文件方便分发 |
+| **图谱存储** | Node.js 内置 `node:sqlite` | 零依赖、嵌入式、单文件方便分发；符号检索使用 LIKE 查询，语义检索由向量层补足 |
 | **AI 分析层** | LLM API (Claude / OpenAI) | 模块解释、层识别、语义理解；支持本地模型 |
 | **MCP Server** | @modelcontextprotocol/sdk | 官方 TypeScript SDK，Claude Code / Cursor / QoderWork 直接对接 |
 | **CLI** | Commander.js | 轻量，Node.js 生态标准选择 |
@@ -147,15 +147,9 @@ CREATE TABLE files (
 );
 ```
 
-### FTS5 全文搜索索引
+### 符号检索
 
-```sql
-CREATE VIRTUAL TABLE symbols_fts USING fts5(
-  name, doc_comment, source_code, ai_summary,
-  content='symbols',
-  content_rowid='rowid'
-);
-```
+符号检索目前使用 SQLite `LIKE` 查询（匹配 `name` / `doc_comment`），始终可用、零额外依赖；"按含义"检索由 `search/` 的向量嵌入 + 混合检索承担。
 
 ---
 
@@ -1047,7 +1041,7 @@ class DependencyHeatmap implements VisualizationPlugin {
 - **零部署**：不需要装 Neo4j / Redis，一个文件搞定
 - **够用**：代码图谱规模通常在几千到几万节点，SQLite 完全 hold 住
 - **便携**：`.codeatlas/db.sqlite` 跟着项目走，git add 即可分享
-- **FTS5**：内置全文搜索，不需要 ElasticSearch
+- **内置能力**：无需额外部署搜索引擎；精确检索用 LIKE，语义检索用向量嵌入
 - **性能**：10 万条记录的 JOIN 查询 <10ms
 
 ### 为什么用 tree-sitter 而不是正则/LSP？

@@ -3,6 +3,7 @@
 // ============================================================
 
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { SQLiteStore, Symbol, Layer, SymbolKind } from '@codeatlas/core';
 
 /** Tree item with extra metadata */
@@ -11,7 +12,10 @@ interface StructureItem {
   kind: 'layer' | 'file' | 'symbol' | 'group';
   layer?: Layer;
   symbolKind?: SymbolKind;
+  /** Project-relative path (matches the store's file keys) */
   filePath?: string;
+  /** Absolute path on disk, used when opening the file */
+  absolutePath?: string;
   line?: number;
   symbolId?: string;
   collapsibleState: vscode.TreeItemCollapsibleState;
@@ -67,7 +71,6 @@ export class StructureTreeProvider implements vscode.TreeDataProvider<StructureI
 
     // Icon
     if (element.kind === 'layer' && element.layer) {
-      const config = LAYER_CONFIG[element.layer];
       item.iconPath = new vscode.ThemeIcon('folder', new vscode.ThemeColor(this.layerToColor(element.layer)));
     } else if (element.kind === 'file') {
       item.iconPath = new vscode.ThemeIcon('file');
@@ -87,12 +90,12 @@ export class StructureTreeProvider implements vscode.TreeDataProvider<StructureI
     }
 
     // Click to open file
-    if (element.filePath && element.line) {
+    if (element.absolutePath && element.line) {
       item.command = {
         command: 'vscode.open',
         title: 'Open',
         arguments: [
-          vscode.Uri.file(element.filePath),
+          vscode.Uri.file(element.absolutePath),
           { selection: new vscode.Range(element.line - 1, 0, element.line - 1, 0) },
         ],
       };
@@ -158,11 +161,11 @@ export class StructureTreeProvider implements vscode.TreeDataProvider<StructureI
 
     const items: StructureItem[] = [];
     for (const [file, fileSymbols] of fileMap) {
-      const relativePath = file;
       items.push({
         label: this.getFileName(file),
         kind: 'file',
-        filePath: this.projectPath ? `${this.projectPath}/${file}` : file,
+        filePath: file,
+        absolutePath: this.toAbsolute(file),
         collapsibleState: vscode.TreeItemCollapsibleState.Collapsed,
         description: `${fileSymbols.length} symbols`,
         tooltip: file,
@@ -179,13 +182,19 @@ export class StructureTreeProvider implements vscode.TreeDataProvider<StructureI
       kind: 'symbol' as const,
       symbolKind: s.kind,
       layer: s.layer,
-      filePath: this.projectPath ? `${this.projectPath}/${s.filePath}` : s.filePath,
+      filePath: s.filePath,
+      absolutePath: this.toAbsolute(s.filePath),
       line: s.startLine,
       symbolId: s.id,
       collapsibleState: vscode.TreeItemCollapsibleState.None,
       description: s.kind,
       tooltip: `${s.name} (${s.kind}) @ ${s.filePath}:${s.startLine}`,
     }));
+  }
+
+  /** Resolve a project-relative path to an absolute path */
+  private toAbsolute(relativePath: string): string {
+    return this.projectPath ? path.join(this.projectPath, relativePath) : relativePath;
   }
 
   private getFileName(filePath: string): string {
@@ -238,9 +247,7 @@ export class LayersTreeProvider implements vscode.TreeDataProvider<LayerItem> {
     const item = new vscode.TreeItem(element.label, element.collapsibleState);
 
     if (element.layer !== 'summary') {
-      const config = LAYER_CONFIG[element.layer];
       item.iconPath = new vscode.ThemeIcon('symbol-enum');
-      item.description = `${element.count} symbols (${element.percentage}%)`;
 
       // Progress bar visualization
       const bars = Math.round((element.percentage ?? 0) / 10);

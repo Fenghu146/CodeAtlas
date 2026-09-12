@@ -5,6 +5,7 @@
 import fs from 'fs';
 import path from 'path';
 import { SQLiteStore } from '../store/sqlite-store.js';
+import { logger } from '../utils/logger.js';
 
 export interface TeamData {
   version: string;
@@ -90,8 +91,8 @@ export function saveTeamData(data: TeamData, outputPath: string): void {
   }
 
   fs.writeFileSync(outputPath, JSON.stringify(data, null, 2), 'utf-8');
-  console.log(`✅ Team data exported to ${outputPath}`);
-  console.log(`   - ${data.annotations.length} annotations`);
+  logger.info(`✅ Team data exported to ${outputPath}`);
+  logger.info(`   - ${data.annotations.length} annotations`);
 }
 
 /**

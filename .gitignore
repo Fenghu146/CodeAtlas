@@ -12,6 +12,11 @@ dist/
 !.vscode/settings.json
 .idea/
 
+# Local AI/agent tooling (machine-specific)
+.claude/
+.cursor/
+.aider*
+
 # OS
 .DS_Store
 Thumbs.db
@@ -35,3 +40,7 @@ tmp/
 # npm (we use pnpm)
 package-lock.json
 npm-shrinkwrap.json
+
+# CodeAtlas diff baselines (generated)
+baseline.json
+*.baseline.json

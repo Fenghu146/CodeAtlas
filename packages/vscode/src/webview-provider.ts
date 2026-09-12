@@ -3,6 +3,7 @@
 // ============================================================
 
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { SQLiteStore } from '@codeatlas/core';
 
 export class GraphWebviewProvider implements vscode.WebviewViewProvider {
@@ -25,7 +26,7 @@ export class GraphWebviewProvider implements vscode.WebviewViewProvider {
       localResourceRoots: [this.extensionUri],
     };
 
-    webviewView.webview.html = this.getHtmlForWebview(webviewView.webview);
+    webviewView.webview.html = this.getHtmlForWebview();
 
     // Handle messages from webview
     webviewView.webview.onDidReceiveMessage(async (message) => {
@@ -89,17 +90,15 @@ export class GraphWebviewProvider implements vscode.WebviewViewProvider {
     if (!this.store) return;
     const symbol = this.store.getSymbol(nodeId);
     if (symbol) {
-      vscode.commands.executeCommand('vscode.open', vscode.Uri.file(symbol.filePath), {
+      const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+      const uri = vscode.Uri.file(path.join(workspaceRoot, symbol.filePath));
+      vscode.commands.executeCommand('vscode.open', uri, {
         selection: new vscode.Range(symbol.startLine - 1, 0, symbol.startLine - 1, 0),
       });
     }
   }
 
-  private getHtmlForWebview(webview: vscode.Webview): string {
-    const scriptUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview.js')
-    );
-
+  private getHtmlForWebview(): string {
     return `<!DOCTYPE html>
 <html lang="en">
 <head>

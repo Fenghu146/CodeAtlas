@@ -2,7 +2,26 @@
   "name": "@codeatlas/core",
   "version": "0.1.0",
   "type": "module",
-  "description": "CodeAtlas core engine - parsing, graph building, storage, and AI analysis",
+  "description": "CodeAtlas core engine — parsing, graph building, storage, search and AI analysis",
+  "license": "MIT",
+  "keywords": [
+    "code-analysis",
+    "knowledge-graph",
+    "tree-sitter",
+    "static-analysis"
+  ],
+  "homepage": "https://github.com/Fenghu146/CodeAtlas#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Fenghu146/CodeAtlas.git",
+    "directory": "packages/core"
+  },
+  "bugs": {
+    "url": "https://github.com/Fenghu146/CodeAtlas/issues"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
@@ -11,10 +30,14 @@
       "import": "./dist/index.js"
     }
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc && node -e \"const fs=require('fs'),p=require('path');const s='src/parser/language-packs',d='dist/parser/language-packs';fs.mkdirSync(d,{recursive:true});fs.readdirSync(s).filter(f=>f.endsWith('.wasm')).forEach(f=>fs.copyFileSync(p.join(s,f),p.join(d,f)));\"",
     "dev": "tsc --watch",
     "test": "vitest run",
+    "typecheck": "tsc --noEmit",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {
@@ -28,6 +51,6 @@
     "@types/node": "^22.0.0",
     "@types/picomatch": "^3.0.0",
     "typescript": "^5.7.0",
-    "vitest": "^3.0.0"
+    "vitest": "^4.1.8"
   }
 }

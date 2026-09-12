@@ -102,13 +102,12 @@ export class GraphBuilder {
           }
         }
 
-        // For imports/decorates, allow target to be a name (not just ID)
-        // This handles module imports and decorator references
-        if (sourceId && !targetId && (rel.kind === 'imports' || rel.kind === 'decorates')) {
-          targetId = rel.targetName; // Use name as reference
-        }
-
-        if (sourceId && targetId) {
+        // Only emit edges between two resolvable symbols. Raw relationship
+        // targets that are not declared symbols — e.g. an import path such as
+        // './services/user.js' — are dropped here; real cross-file import edges
+        // are created by resolveImports() below. Emitting a dangling reference
+        // would violate the store's foreign-key constraint on relationships.
+        if (sourceId && targetId && symbols.has(sourceId) && symbols.has(targetId)) {
           relationships.push({
             id: `${sourceId}->${rel.kind}->${targetId}`,
             sourceId,

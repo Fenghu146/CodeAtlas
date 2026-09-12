@@ -1,33 +1,46 @@
-# CodeAtlas 配置文件
-# 放在项目根目录，自定义扫描和分析行为
+# CodeAtlas 配置文件示例
+# 复制为项目根目录下的 .codeatlas.yaml 即可生效（也可用 .codeatlas.json）。
+# 所有字段均为可选，未配置时使用内置默认值。
 
 name: my-project
 version: "1.0"
 
-# 扫描配置
+# ---- 扫描配置 ----
 scan:
+  # 仅扫描这些路径（为空时扫描全部支持的文件类型）
   include:
     - src/**
     - lib/**
+  # 排除路径
   exclude:
     - node_modules/**
     - dist/**
     - "**/*.test.*"
     - "**/*.spec.*"
     - "**/__tests__/**"
+    # 嵌入式项目可排除第三方库以加速扫描：
+    # - lib/**
+    # - .pio/**
+  # 语言过滤（可选）
   languages:
     - javascript
     - typescript
     # - python
     # - go
 
-# 层级分类自定义规则
+# ---- 架构分层自定义规则 ----
+# 每条规则按 weight 加权计分，得分最高的层胜出。
+# kind 取值：path（文件路径）、naming（符号命名）、import（依赖包名）、code（源码内容）
 layers:
   interface:
     paths:
       - "src/api/**"
       - "src/pages/**"
       - "src/components/**"
+    # rules:
+    #   - kind: import
+    #     patterns: ["next", "react"]
+    #     weight: 3
   business:
     paths:
       - "src/services/**"
@@ -36,17 +49,35 @@ layers:
     paths:
       - "src/db/**"
       - "src/repositories/**"
+    # rules:
+    #   - kind: import
+    #     patterns: ["@prisma/client"]
+    #     weight: 4
+  utility:
+    paths:
+      - "src/utils/**"
 
-# AI 配置
+# ---- AI 配置（可选，用于语义搜索 / 智能解释 / 代码审查）----
 ai:
   provider: claude          # claude | openai | local
   model: claude-sonnet-4-20250514
-  autoExplain: false        # 扫描后自动生成模块解释 (消耗 API tokens)
+  autoExplain: false        # 扫描后自动生成模块解释（会消耗 API tokens）
   batchSize: 10             # 每批分析的模块数
-  # apiKey: 从环境变量 ANTHROPIC_API_KEY 读取
-  # baseUrl: http://localhost:11434  # 本地模型 (Ollama)
+  # apiKey: 从环境变量 ANTHROPIC_API_KEY / OPENAI_API_KEY 读取
+  # baseUrl: http://localhost:11434   # 本地模型（Ollama）
 
-# MCP Server 配置
+# ---- MCP Server 配置 ----
 mcp:
   autoScan: true            # 启动时自动增量扫描
-  watchChanges: true        # 监听文件变化自动更新
+  watchChanges: false       # 监听文件变化并自动更新
+
+# ---- 架构门禁规则（供 codeatlas guard 使用，可选）----
+# rules:
+#   - name: no-interface-to-data
+#     description: 接口层不得直接依赖数据层
+#     forbid:
+#       from: interface
+#       to: data
+#   - name: complexity-budget
+#     description: 单符号复杂度上限
+#     maxComplexity: 20

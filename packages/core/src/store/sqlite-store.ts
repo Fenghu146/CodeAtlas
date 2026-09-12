@@ -126,15 +126,6 @@ export class SQLiteStore {
 
     // Annotations table (delegated to AnnotationStore)
     this._annotations.initSchema();
-
-    // Indexes for symbol search
-    try {
-      this.db.exec('CREATE INDEX IF NOT EXISTS idx_symbols_name ON symbols(name)');
-      this.db.exec('CREATE INDEX IF NOT EXISTS idx_symbols_kind ON symbols(kind)');
-      this.db.exec('CREATE INDEX IF NOT EXISTS idx_symbols_layer ON symbols(layer)');
-    } catch {
-      // Indexes may already exist
-    }
   }
 
   // ========================
@@ -162,13 +153,9 @@ export class SQLiteStore {
 
   /** Run a SELECT and return array of row objects */
   private queryAll(sql: string, params: any[] = []): Record<string, any>[] {
-    try {
-      const stmt = this.db.prepare(sql);
-      if (params.length > 0) return stmt.all(...params) as Record<string, any>[];
-      return stmt.all() as Record<string, any>[];
-    } catch (err) {
-      throw err;
-    }
+    const stmt = this.db.prepare(sql);
+    if (params.length > 0) return stmt.all(...params) as Record<string, any>[];
+    return stmt.all() as Record<string, any>[];
   }
 
   /** Run a SELECT and return first row object or undefined */
@@ -253,21 +240,21 @@ export class SQLiteStore {
     return rows.map(r => this.rowToSymbol(r));
   }
 
-  /** Delete all symbols and their relationships belonging to a file */
+  /** Delete all symbols and their relationships belonging to a file. Returns the number removed. */
   deleteSymbolsByFile(filePath: string): number {
-    // First delete relationships involving symbols in this file
+    // Count before deletion so we can report how many symbols were removed
+    const before = this.queryOne('SELECT COUNT(*) as count FROM symbols WHERE file_path = ?', [filePath]);
+    const removed = (before?.count as number) ?? 0;
+
+    // Delete relationships involving symbols in this file, then the symbols themselves
     this.run(`
       DELETE FROM relationships
       WHERE source_id IN (SELECT id FROM symbols WHERE file_path = ?)
          OR target_id IN (SELECT id FROM symbols WHERE file_path = ?)
     `, [filePath, filePath]);
-
-    // Then delete the symbols
-    const before = this.queryOne('SELECT COUNT(*) as count FROM symbols WHERE file_path = ?', [filePath]);
     this.run('DELETE FROM symbols WHERE file_path = ?', [filePath]);
-    const after = this.queryOne('SELECT COUNT(*) as count FROM symbols WHERE file_path = ?', [filePath]);
-    /* persist no longer needed — node:sqlite writes directly to disk */
-    return (before?.count ?? 0) - (after?.count ?? 0);
+
+    return removed;
   }
 
   // ========================
@@ -477,7 +464,7 @@ export class SQLiteStore {
   /** Finalize a bulk insert session (call after all batch ops) */
   endBulkInsert(): void {
     this.run('COMMIT');
-    try { this.db.exec('DROP TABLE IF EXISTS symbols_fts'); } catch { /* ignore */ }
+    this.db.exec('PRAGMA synchronous = NORMAL');
   }
 
   /** Insert or replace a single symbol (ON CONFLICT → overwrite) */

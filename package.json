@@ -2,25 +2,39 @@
   "name": "codeatlas",
   "version": "0.1.0",
   "private": true,
-  "description": "Turn any codebase into an interactive knowledge graph",
-  "scripts": {
-    "build": "pnpm -r run build",
-    "dev": "pnpm -r run --parallel dev",
-    "test": "pnpm -r run --parallel test",
-    "clean": "pnpm -r run --parallel clean"
-  },
+  "description": "Turn any codebase into an interactive knowledge graph — parse, understand, and visualize architecture with Tree-sitter, MCP and AI.",
   "keywords": [
     "code-analysis",
     "knowledge-graph",
+    "static-analysis",
     "tree-sitter",
+    "architecture",
     "mcp",
-    "visualization"
+    "visualization",
+    "ai"
   ],
   "license": "MIT",
+  "author": "Fenghu146",
+  "homepage": "https://github.com/Fenghu146/CodeAtlas#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Fenghu146/CodeAtlas.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Fenghu146/CodeAtlas/issues"
+  },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=22.13.0"
   },
   "packageManager": "pnpm@9.0.0",
+  "scripts": {
+    "build": "pnpm -r run build",
+    "dev": "pnpm -r run --parallel dev",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "pnpm -r run typecheck",
+    "clean": "pnpm -r run --parallel clean"
+  },
   "devDependencies": {
     "vitest": "^4.1.8"
   },

@@ -84,7 +84,7 @@ export class HybridSearch {
   }
 
   /**
-   * Keyword search using FTS5.
+   * Keyword search: delegates to the store's LIKE-based symbol search.
    */
   private keywordSearch(query: string, opts: Required<HybridSearchOptions>): SearchResult[] {
     const searchOpts: any = { limit: opts.topK * 2 };
@@ -152,56 +152,43 @@ export class HybridSearch {
   ): HybridResult[] {
     const resultMap = new Map<string, HybridResult>();
 
-    // Process keyword results
+    /** Get the merged entry for a symbol, creating a zeroed one on first sight. */
+    const ensure = (r: SearchResult): HybridResult => {
+      let entry = resultMap.get(r.symbolId);
+      if (!entry) {
+        entry = {
+          symbol: r.symbol,
+          keywordScore: 0,
+          vectorScore: 0,
+          graphScore: 0,
+          combinedScore: 0,
+          reasons: [],
+        };
+        resultMap.set(r.symbolId, entry);
+      }
+      return entry;
+    };
+
+    // Keyword results
     for (const r of keywordResults) {
-      if (!resultMap.has(r.symbolId)) {
-        resultMap.set(r.symbolId, {
-          symbol: r.symbol,
-          keywordScore: 0,
-          vectorScore: 0,
-          graphScore: 0,
-          combinedScore: 0,
-          reasons: [],
-        });
-      }
-      const result = resultMap.get(r.symbolId)!;
-      result.keywordScore = r.score;
-      result.reasons.push('keyword match');
+      const entry = ensure(r);
+      entry.keywordScore = r.score;
+      entry.reasons.push('keyword match');
     }
 
-    // Process vector results
+    // Vector results
     for (const r of vectorResults) {
-      if (!resultMap.has(r.symbolId)) {
-        resultMap.set(r.symbolId, {
-          symbol: r.symbol,
-          keywordScore: 0,
-          vectorScore: 0,
-          graphScore: 0,
-          combinedScore: 0,
-          reasons: [],
-        });
-      }
-      const result = resultMap.get(r.symbolId)!;
-      result.vectorScore = r.score;
-      result.reasons.push('semantic similarity');
+      const entry = ensure(r);
+      entry.vectorScore = r.score;
+      entry.reasons.push('semantic similarity');
     }
 
-    // Process graph results
+    // Graph results
     for (const r of graphResults) {
-      if (!resultMap.has(r.symbolId)) {
-        resultMap.set(r.symbolId, {
-          symbol: r.symbol,
-          keywordScore: 0,
-          vectorScore: 0,
-          graphScore: 0,
-          combinedScore: 0,
-          reasons: [],
-        });
-      }
-      const result = resultMap.get(r.symbolId)!;
-      result.graphScore = Math.max(result.graphScore, r.score);
-      if (!result.reasons.includes('graph relation')) {
-        result.reasons.push('graph relation');
+      const entry = ensure(r);
+      entry.graphScore = Math.max(entry.graphScore, r.score);
+      if (!entry.reasons.includes('graph relation')) {
+        entry.reasons.push('graph relation');
       }
     }
 

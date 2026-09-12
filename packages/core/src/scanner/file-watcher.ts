@@ -4,6 +4,7 @@
 
 import { EventEmitter } from 'events';
 import type { ProjectScanner, ScanResult } from './scanner.js';
+import { logger } from '../utils/logger.js';
 
 // Dynamic import for chokidar (ESM)
 let chokidarModule: any;
@@ -78,15 +79,15 @@ export class FileWatcher extends EventEmitter {
    */
   async start(): Promise<void> {
     if (this.watcher) {
-      console.warn('FileWatcher already started');
+      logger.warn('FileWatcher already started');
       return;
     }
 
     const chokidar = await getChokidar();
 
-    console.log(`\n👁️  Starting file watcher...`);
-    console.log(`   Paths: ${this.options.paths.join(', ')}`);
-    console.log(`   Debounce: ${this.options.debounceDelay}ms`);
+    logger.info(`👁️  Starting file watcher...`);
+    logger.info(`   Paths: ${this.options.paths.join(', ')}`);
+    logger.info(`   Debounce: ${this.options.debounceDelay}ms`);
 
     this.watcher = chokidar.watch(this.options.paths, {
       ignored: this.options.ignored,
@@ -104,7 +105,7 @@ export class FileWatcher extends EventEmitter {
       .on('unlink', (path: string) => this.handleEvent('unlink', path))
       .on('error', (error: Error) => this.emit('error', error))
       .on('ready', () => {
-        console.log('   ✅ Watching for changes...\n');
+        logger.info('   ✅ Watching for changes...');
         this.emit('ready');
       });
   }
@@ -121,7 +122,7 @@ export class FileWatcher extends EventEmitter {
     if (this.watcher) {
       await this.watcher.close();
       this.watcher = null;
-      console.log('👁️  File watcher stopped');
+      logger.info('👁️  File watcher stopped');
     }
   }
 
@@ -167,16 +168,16 @@ export class FileWatcher extends EventEmitter {
     const changes = Array.from(this.pendingChanges.values());
     this.pendingChanges.clear();
 
-    console.log(`\n📝 Detected ${changes.length} file changes`);
+    logger.info(`📝 Detected ${changes.length} file changes`);
 
     // Group by change type
     const added = changes.filter(c => c.type === 'add');
     const modified = changes.filter(c => c.type === 'change');
     const deleted = changes.filter(c => c.type === 'unlink');
 
-    if (added.length > 0) console.log(`   + ${added.length} added`);
-    if (modified.length > 0) console.log(`   ~ ${modified.length} modified`);
-    if (deleted.length > 0) console.log(`   - ${deleted.length} deleted`);
+    if (added.length > 0) logger.info(`   + ${added.length} added`);
+    if (modified.length > 0) logger.info(`   ~ ${modified.length} modified`);
+    if (deleted.length > 0) logger.info(`   - ${deleted.length} deleted`);
 
     if (this.options.autoScan) {
       try {
@@ -187,13 +188,13 @@ export class FileWatcher extends EventEmitter {
           full: false,
         });
 
-        console.log(`   ✅ Scan complete in ${result.duration}ms`);
-        console.log(`      ${result.symbolsFound} symbols, ${result.relationshipsFound} relationships\n`);
+        logger.info(`   ✅ Scan complete in ${result.duration}ms`);
+        logger.info(`      ${result.symbolsFound} symbols, ${result.relationshipsFound} relationships`);
 
         this.emit('scanComplete', result);
         this.emit('update', result);
       } catch (error) {
-        console.error('   ❌ Scan failed:', error);
+        logger.error(`   ❌ Scan failed: ${error}`);
         this.emit('error', error);
       } finally {
         this.isScanning = false;

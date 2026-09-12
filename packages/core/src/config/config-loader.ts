@@ -4,6 +4,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import { logger } from '../utils/logger.js';
 
 export interface ScanConfig {
   include?: string[];
@@ -120,9 +121,9 @@ export function loadConfig(projectPath: string): CodeAtlasConfig {
     try {
       const content = fs.readFileSync(configPath, 'utf-8');
       config = parseYAML(content);
-      console.log(`Loaded config from ${configPath}`);
+      logger.info(`Loaded config from ${configPath}`);
     } catch (error) {
-      console.warn(`Failed to parse ${configPath}:`, error);
+      logger.warn(`Failed to parse ${configPath}: ${error}`);
     }
   }
   // Try JSON config
@@ -130,9 +131,9 @@ export function loadConfig(projectPath: string): CodeAtlasConfig {
     try {
       const content = fs.readFileSync(jsonConfigPath, 'utf-8');
       config = JSON.parse(content);
-      console.log(`Loaded config from ${jsonConfigPath}`);
+      logger.info(`Loaded config from ${jsonConfigPath}`);
     } catch (error) {
-      console.warn(`Failed to parse ${jsonConfigPath}:`, error);
+      logger.warn(`Failed to parse ${jsonConfigPath}: ${error}`);
     }
   }
 

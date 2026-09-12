@@ -38,17 +38,19 @@ export function activate(context: vscode.ExtensionContext) {
   hoverProvider = new CodeAtlasHoverProvider();
   codeLensProvider = new CodeAtlasCodeLensProvider();
 
-  // Initialize store (async) and set on providers when ready
+  // Initialize store (synchronous, node:sqlite) and wire it into every provider
   const dbPath = path.join(workspaceRoot, '.codeatlas', 'db.sqlite');
-  new SQLiteStore({ dbPath }).then(initializedStore => {
+  try {
+    const initializedStore = new SQLiteStore({ dbPath });
     store = initializedStore;
-    structureProvider.setStore(store, workspaceRoot);
-    layersProvider.setStore(store);
-    hoverProvider.setStore(store);
-    codeLensProvider.setStore(store);
-  }).catch(err => {
+    structureProvider.setStore(initializedStore, workspaceRoot);
+    layersProvider.setStore(initializedStore);
+    graphProvider.setStore(initializedStore);
+    hoverProvider.setStore(initializedStore);
+    codeLensProvider.setStore(initializedStore);
+  } catch (err) {
     vscode.window.showErrorMessage(`CodeAtlas: Failed to initialize database: ${err}`);
-  });
+  }
 
   // Register TreeView providers
   vscode.window.registerTreeDataProvider('codeatlas.structureView', structureProvider);
@@ -157,16 +159,11 @@ function registerCommands(context: vscode.ExtensionContext, workspaceRoot: strin
     })
   );
 
-  // Show Graph command
+  // Show Graph command — reveal the activity-bar graph view and refresh its data
   context.subscriptions.push(
-    vscode.commands.registerCommand('codeatlas.showGraph', () => {
-      const panel = vscode.window.createWebviewPanel(
-        'codeatlas.graph',
-        'Code Graph',
-        vscode.ViewColumn.Two,
-        { enableScripts: true, retainContextWhenHidden: true }
-      );
-      panel.webview.html = getGraphWebviewHtml();
+    vscode.commands.registerCommand('codeatlas.showGraph', async () => {
+      await vscode.commands.executeCommand('codeatlas.graphView.focus');
+      await graphProvider.refreshGraph();
     })
   );
 
@@ -350,27 +347,6 @@ export function deactivate() {
 // ============================================================
 // Helper functions
 // ============================================================
-
-function getGraphWebviewHtml(): string {
-  return `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <style>
-    body { margin: 0; padding: 0; overflow: hidden; }
-    #graph { width: 100vw; height: 100vh; }
-  </style>
-</head>
-<body>
-  <div id="graph"></div>
-  <script src="https://unpkg.com/cytoscape@3.28.0/dist/cytoscape.min.js"></script>
-  <script>
-    // Graph visualization will be loaded here
-    document.getElementById('graph').innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;color:#888;">Graph visualization loading...</div>';
-  </script>
-</body>
-</html>`;
-}
 
 function getExplainWebviewHtml(markdown: string): string {
   // Simple markdown to HTML conversion

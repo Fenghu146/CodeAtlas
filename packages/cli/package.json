@@ -2,7 +2,26 @@
   "name": "@codeatlas/cli",
   "version": "0.1.0",
   "type": "module",
-  "description": "CodeAtlas CLI - Command-line interface for code knowledge graph",
+  "description": "CodeAtlas CLI — command-line interface for the code knowledge graph",
+  "license": "MIT",
+  "keywords": [
+    "code-analysis",
+    "knowledge-graph",
+    "cli",
+    "tree-sitter"
+  ],
+  "homepage": "https://github.com/Fenghu146/CodeAtlas#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Fenghu146/CodeAtlas.git",
+    "directory": "packages/cli"
+  },
+  "bugs": {
+    "url": "https://github.com/Fenghu146/CodeAtlas/issues"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  },
   "main": "dist/index.js",
   "bin": {
     "codeatlas": "dist/index.js"
@@ -13,10 +32,14 @@
       "import": "./dist/index.js"
     }
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "clean": "rm -rf dist"
+    "typecheck": "tsc --noEmit",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {
     "@codeatlas/core": "workspace:*",

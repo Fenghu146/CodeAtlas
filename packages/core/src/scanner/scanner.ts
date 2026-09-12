@@ -15,6 +15,7 @@ import { loadConfig, getAIConfig } from '../config/config-loader.js';
 import type { FileInfo, CodeGraph } from '../graph/types.js';
 import type { ParseResult } from '../parser/index.js';
 import { scanProjectMacros } from './macro-scanner.js';
+import { logger } from '../utils/logger.js';
 
 export interface ScanOptions {
   projectPath: string;
@@ -63,8 +64,8 @@ export class ProjectScanner {
     const lastScanInfo = this.store.getLastScanInfo();
     let forceFull = full;
     if (!full && lastScanInfo.path && lastScanInfo.path !== projectPath) {
-      console.log(`⚠️  Scan path changed: ${lastScanInfo.path} → ${projectPath}`);
-      console.log(`   Auto-triggering full scan...`);
+      logger.info(`⚠️  Scan path changed: ${lastScanInfo.path} → ${projectPath}`);
+      logger.info(`   Auto-triggering full scan...`);
       forceFull = true;
     }
 

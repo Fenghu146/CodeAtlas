@@ -4,6 +4,22 @@
   "displayName": "CodeAtlas",
   "description": "Interactive code knowledge graph for VSCode - visualize architecture, search semantically, analyze impact",
   "publisher": "codeatlas",
+  "license": "MIT",
+  "keywords": [
+    "code-analysis",
+    "knowledge-graph",
+    "architecture",
+    "visualization"
+  ],
+  "homepage": "https://github.com/Fenghu146/CodeAtlas#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Fenghu146/CodeAtlas.git",
+    "directory": "packages/vscode"
+  },
+  "bugs": {
+    "url": "https://github.com/Fenghu146/CodeAtlas/issues"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -13,8 +29,9 @@
   "scripts": {
     "build": "tsc -p .",
     "dev": "tsc -w -p .",
+    "typecheck": "tsc -p . --noEmit",
     "package": "vsce package",
-    "clean": "rm -rf dist"
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "contributes": {
     "commands": [
@@ -47,6 +64,14 @@
         "command": "codeatlas.showLayers",
         "title": "Show Architecture Layers",
         "icon": "$(list-flat)"
+      },
+      {
+        "command": "codeatlas.showCallers",
+        "title": "Show Callers"
+      },
+      {
+        "command": "codeatlas.showCallees",
+        "title": "Show Callees"
       }
     ],
     "viewsContainers": {

@@ -1,8 +1,28 @@
 {
   "name": "@codeatlas/web",
   "version": "0.1.0",
-  "description": "CodeAtlas Web - Interactive code knowledge graph visualization",
+  "description": "CodeAtlas Web — interactive code knowledge graph visualization",
+  "license": "MIT",
+  "keywords": [
+    "code-analysis",
+    "knowledge-graph",
+    "visualization",
+    "cytoscape"
+  ],
+  "homepage": "https://github.com/Fenghu146/CodeAtlas#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Fenghu146/CodeAtlas.git",
+    "directory": "packages/web"
+  },
+  "bugs": {
+    "url": "https://github.com/Fenghu146/CodeAtlas/issues"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  },
   "type": "module",
+  "private": true,
   "scripts": {
     "dev": "vite",
     "build": "vite build",
