@@ -2,6 +2,11 @@
 
 > 十分钟看清一个陌生项目的架构，像看地图一样浏览代码。
 
+> **📌 文档状态（2026-10）**：本文是立项时的设计文档，保留作为产品愿景与架构决策的
+> 历史记录。部分实现细节已演进（如 MCP 工具已由 38 个整合为 28 个、解析改为可回收
+> 子进程池）。**当前工具面的权威对照见 [docs/TOOLS-MATRIX.md](docs/TOOLS-MATRIX.md)**，
+> 使用说明见 [README.md](README.md)。
+
 ## 一句话定位
 
 CodeAtlas 是一个代码结构分析 + 可视化工具，用 tree-sitter 解析代码构建知识图谱，用 AI 理解语义，通过 MCP / CLI / Web / VSCode 四种方式交付给开发者。
@@ -483,6 +488,10 @@ export class ProjectScanner {
 ## MCP Tools 设计
 
 这是让 Claude Code / Cursor / QoderWork 等 AI 工具能直接查询代码图谱的关键。
+
+> ⚠️ 本表为 2025 年设计稿，与现状有出入（`codeatlas_callers`/`codeatlas_callees`
+> 等已合并进 `codeatlas_calls`，`semantic_search_v2` 已并回 `semantic_search(mode)`）。
+> 现行 28 个工具的清单与参数以运行时 `tools/list` 为准，对照见 docs/TOOLS-MATRIX.md。
 
 | Tool 名称 | 用途 | 参数 | 返回 |
 |---|---|---|---|
