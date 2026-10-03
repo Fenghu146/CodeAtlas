@@ -550,6 +550,11 @@ export class SQLiteStore {
     return this._annotations.getAnnotations(symbolId);
   }
 
+  /** Get every annotation in the index (newest first) */
+  getAllAnnotations(): any[] {
+    return this._annotations.getAllAnnotations();
+  }
+
   /** Get all annotations by a user */
   getAnnotationsByUser(userId: string): any[] {
     return this._annotations.getAnnotationsByUser(userId);

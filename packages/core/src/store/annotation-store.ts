@@ -44,6 +44,11 @@ export class AnnotationStore {
     );
   }
 
+  /** Get every annotation in the index (newest first). */
+  getAllAnnotations(): any[] {
+    return this.store.executeQuery('SELECT * FROM annotations ORDER BY created_at DESC');
+  }
+
   getAnnotationsByUser(userId: string): any[] {
     return this.store.executeQuery(
       'SELECT * FROM annotations WHERE user_id = ? ORDER BY created_at DESC',

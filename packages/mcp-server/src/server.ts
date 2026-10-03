@@ -218,7 +218,7 @@ server.tool(
     exclude: z.array(z.string()).optional().describe('Additional directories to exclude (e.g., ["lib", "vendor"])'),
     profile: z.enum(['default', 'embedded-mcu', 'embedded-linux']).optional().describe('Scan profile: embedded-linux includes Kconfig, DTS, Yocto, systemd files.'),
   },
-  { readOnlyHint: false, idempotentHint: true, destructiveHint: false },
+  { readOnlyHint: false, idempotentHint: true, destructiveHint: false, openWorldHint: false },
   async ({ path: scanPath, full, exclude, profile }) => {
     const target = scanPath ? path.resolve(scanPath) : projectPath;
     try {
@@ -258,7 +258,7 @@ server.tool(
     layer: z.enum(['interface', 'business', 'data', 'utility']).optional().describe('Filter by architectural layer'),
     limit: z.number().optional().default(20).describe('Max results'),
   },
-  { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+  { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: false },
   async ({ query, kind, layer, limit }) => {
     // Try FTS search first
     let results = store.searchSymbols(query, { kind: kind as any, layer: layer as any, limit });
@@ -300,34 +300,13 @@ server.tool(
   {
     id: z.string().describe('Symbol ID (format: filePath:name:line) or symbol name'),
   },
-  { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+  { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: false },
   async ({ id }) => {
-    // Try multiple ID formats
-    let symbol = store.getSymbol(id);
-    if (!symbol) {
-      const forwardId = id.replace(/\\/g, '/');
-      symbol = store.getSymbol(forwardId);
+    const resolved = resolveSymbol(id);
+    if (!resolved.ok) {
+      return { content: [{ type: 'text' as const, text: resolved.message }] };
     }
-    if (!symbol) {
-      const backslashId = id.replace(/\//g, '\\');
-      symbol = store.getSymbol(backslashId);
-    }
-    if (!symbol) {
-      // Try searching by name
-      const results = store.searchSymbols(id, { limit: 5 });
-      if (results.length === 1) {
-        symbol = results[0];
-      } else if (results.length > 1) {
-        const formatted = results.map(s =>
-          `- ${s.id}\n  ${s.name} (${s.kind}) @ ${s.filePath}:${s.startLine}`
-        ).join('\n');
-        return { content: [{ type: 'text' as const, text: `Multiple symbols found. Please use the full ID:\n${formatted}` }] };
-      }
-    }
-
-    if (!symbol) {
-      return { content: [{ type: 'text' as const, text: `Symbol "${id}" not found.` }] };
-    }
+    const symbol = resolved.symbol;
     const info = [
       `Name: ${symbol.name}`,
       `Kind: ${symbol.kind}`,
@@ -371,6 +350,26 @@ function resolveSymbol(id: string): ResolveOutcome {
     if (symbol) symbolId = backslashId;
   }
   if (!symbol) {
+    // Qualified name like `UserRepository.save` — match on parent + member name,
+    // which is how users naturally refer to methods and fields.
+    const dot = id.lastIndexOf('.');
+    if (dot > 0 && dot < id.length - 1) {
+      const parentName = id.slice(0, dot);
+      const memberName = id.slice(dot + 1);
+      const matches = store.searchSymbols(memberName, { limit: 20 })
+        .filter(s => s.name === memberName && s.parentName === parentName);
+      if (matches.length === 1) {
+        symbol = matches[0];
+        symbolId = matches[0].id;
+      } else if (matches.length > 1) {
+        const formatted = matches.map(s =>
+          `- ${s.id}\n  ${s.name} (${s.kind}) @ ${s.filePath}:${s.startLine}`
+        ).join('\n');
+        return { ok: false, message: `Multiple symbols found for "${id}". Please use the full ID:\n${formatted}` };
+      }
+    }
+  }
+  if (!symbol) {
     const results = store.searchSymbols(id, { limit: 5 });
     if (results.length === 1) {
       symbol = results[0];
@@ -399,7 +398,7 @@ server.tool(
     direction: z.enum(['in', 'out', 'both']).optional().default('in')
       .describe('Call edge direction: "in" = callers (who calls this), "out" = callees (what this calls), "both" = both sides'),
   },
-  { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+  { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: false },
   async ({ id, direction }) => {
     const resolved = resolveSymbol(id);
     if (!resolved.ok) {
@@ -435,7 +434,7 @@ server.tool(
     symbol: z.string().optional().describe('Symbol name or ID for comprehensive context'),
     maxTokens: z.number().optional().default(3000).describe('Max tokens for context'),
   },
-  { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+  { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: false },
   async ({ task, symbol, maxTokens }) => {
     // Symbol-based context mode
     if (symbol) {
@@ -540,7 +539,7 @@ server.tool(
     id: z.string().describe('Symbol ID, name, or fuzzy match'),
     depth: z.number().optional().default(2).describe('Max traversal depth (default: 2)'),
   },
-  { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+  { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: false },
   async ({ id, depth }) => {
     // Try to find symbol with fuzzy matching
     let symbolId = id;
@@ -598,7 +597,7 @@ server.tool(
   'codeatlas_layers',
   'View the architectural layer classification of the project.',
   {},
-  { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+  { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: false },
   async () => {
     const stats = store.getStats();
     const layers = ['interface', 'business', 'data', 'utility'] as const;
@@ -635,7 +634,7 @@ server.tool(
     layers: z.array(z.string()).optional().describe('Filter by layers'),
     limit: z.number().optional().default(200).describe('Max nodes to return'),
   },
-  { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+  { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: false },
   async ({ layers, limit }) => {
     // Get symbols, optionally filtered by layers
     let allSymbols: any[] = [];
@@ -693,7 +692,7 @@ server.tool(
     id: z.string().optional().describe('Symbol ID (format: filePath:name:startLine)'),
     path: z.string().optional().describe('File path to explain all symbols in'),
   },
-  { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+  { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: true },
   async ({ id, path: filePath }) => {
     // Use shared explainer (connection pool)
     if (!sharedExplainer) {
@@ -759,7 +758,7 @@ server.tool(
     mode: z.enum(['auto', 'vector', 'ai']).optional().default('auto')
       .describe('Search strategy: "vector" uses embeddings (requires codeatlas_semantic_index), "ai" uses AI matching, "auto" prefers vector and falls back to AI'),
   },
-  { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+  { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: true },
   async ({ query, top, mode }) => {
     if (mode === 'vector' || mode === 'auto') {
       const generator = createEmbeddingGenerator({ provider: 'local' });
@@ -833,8 +832,8 @@ server.tool(
   'Manage annotations on symbols: action="add" attaches a comment/TODO/issue, action="list" shows a symbol\'s annotations, action="resolve" marks one resolved or unresolved.',
   {
     action: z.enum(['add', 'list', 'resolve'])
-      .describe('"add" = new annotation, "list" = show a symbol\'s annotations, "resolve" = toggle resolved state'),
-    symbolId: z.string().optional().describe('Symbol ID or name (required for add and list)'),
+      .describe('"add" = new annotation, "list" = show annotations (all, or one symbol\'s with symbolId), "resolve" = toggle resolved state'),
+    symbolId: z.string().optional().describe('Symbol ID or name (required for add; optional for list — omit to list every annotation)'),
     content: z.string().optional().describe('Annotation text (required for add)'),
     userId: z.string().optional().default('anonymous').describe('User identifier (add)'),
     type: z.enum(['comment', 'todo', 'issue', 'question']).optional().default('comment')
@@ -843,7 +842,7 @@ server.tool(
     resolved: z.boolean().optional().default(true)
       .describe('Mark resolved (true) or unresolved (false) — resolve only'),
   },
-  { readOnlyHint: false, idempotentHint: false, destructiveHint: false },
+  { readOnlyHint: false, idempotentHint: false, destructiveHint: false, openWorldHint: false },
   async ({ action, symbolId, content, userId, type, annotationId, resolved }) => {
     if (action === 'add') {
       if (!symbolId || !content) {
@@ -863,27 +862,32 @@ server.tool(
     }
 
     if (action === 'list') {
-      if (!symbolId) {
-        return { content: [{ type: 'text' as const, text: 'action="list" needs symbolId.' }] };
+      // With a symbolId: that symbol's annotations. Without: every annotation.
+      let scopeName = 'all symbols';
+      let annotations: any[];
+      if (symbolId) {
+        const target = resolveSymbol(symbolId);
+        if (!target.ok) {
+          return { content: [{ type: 'text' as const, text: target.message }] };
+        }
+        scopeName = target.symbol.name;
+        annotations = store.getAnnotations(target.symbolId);
+      } else {
+        annotations = store.getAllAnnotations();
       }
-      const target = resolveSymbol(symbolId);
-      if (!target.ok) {
-        return { content: [{ type: 'text' as const, text: target.message }] };
-      }
-      const annotations = store.getAnnotations(target.symbolId);
       if (annotations.length === 0) {
         return {
           content: [{
             type: 'text' as const,
-            text: `No annotations for "${target.symbol.name}" yet. Use codeatlas_annotate with action="add".`,
+            text: `No annotations for "${scopeName}" yet. Use codeatlas_annotate with action="add".`,
           }],
         };
       }
       const formatted = annotations.map(a =>
-        `- **${a.type}** by ${a.user_id} (${a.created_at}):\n  ${a.content}${a.resolved ? ' ✅' : ''}`
+        `- **${a.type}** by ${a.user_id} (${a.created_at}) on ${a.symbol_id}:\n  ${a.content}${a.resolved ? ' ✅' : ''}`
       ).join('\n\n');
       return {
-        content: [{ type: 'text' as const, text: `Annotations for ${target.symbol.name} (${annotations.length}):\n\n${formatted}` }],
+        content: [{ type: 'text' as const, text: `Annotations (${annotations.length}) for ${scopeName}:\n\n${formatted}` }],
       };
     }
 
@@ -905,7 +909,7 @@ server.tool(
   'codeatlas_summary',
   'Get a quick overview of the project: file count, symbol count, layer distribution, and key modules. Use this first to understand the codebase.',
   {},
-  { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+  { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: false },
   async () => {
     const stats = store.getStats();
 
@@ -966,7 +970,7 @@ server.tool(
   {
     limit: z.number().optional().default(10).describe('Max results'),
   },
-  { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+  { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: false },
   async ({ limit }) => {
     const allSymbols = store.searchSymbols('', { limit: 10000 });
     const symbolIds = allSymbols.map(s => s.id);
@@ -1066,7 +1070,7 @@ server.tool(
   {
     limit: z.number().optional().default(10).describe('Max files to show'),
   },
-  { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+  { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: false },
   async ({ limit }) => {
     // Get files sorted by parsed_at (most recent first)
     const recentFiles = store.getRecentFiles(limit);
@@ -1106,7 +1110,7 @@ server.tool(
   {
     circular: z.boolean().optional().default(false).describe('Only show circular dependencies'),
   },
-  { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+  { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: false },
   async ({ circular }) => {
     const analyzer = new DepAnalyzer(store, projectPath);
     const result = analyzer.analyze();
@@ -1136,7 +1140,7 @@ server.tool(
     smart: z.boolean().optional().default(true).describe('Use graph-aware context (saves ~90% tokens)'),
     budget: z.number().optional().default(4000).describe('Token budget for smart mode'),
   },
-  { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+  { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: true },
   async ({ files, focus, depth, smart, budget }) => {
     const config = loadConfig(projectPath);
     const aiConfig = getAIConfig(config);
@@ -1187,7 +1191,7 @@ server.tool(
     forbidCircular: z.boolean().optional().default(true).describe('Fail on circular dependencies'),
     maxComplexity: z.number().optional().default(50).describe('Max complexity per symbol'),
   },
-  { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+  { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: false },
   async ({ maxDepth, forbidCircular, maxComplexity }) => {
     const analyzer = new GuardAnalyzer(store, {
       maxImpactDepth: maxDepth,
@@ -1216,7 +1220,7 @@ server.tool(
     target: z.string().describe('Target symbol ID or name'),
     maxDepth: z.number().optional().default(6).describe('Max path length'),
   },
-  { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+  { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: false },
   async ({ source, target, maxDepth }) => {
     const finder = new PathFinder(store);
     const result = finder.find(source, target, maxDepth);
@@ -1239,7 +1243,7 @@ server.tool(
     budget: z.number().optional().default(8000).describe('Total token budget (execute mode)'),
     maxIterations: z.number().optional().default(3).describe('Max refinement iterations (execute mode)'),
   },
-  { readOnlyHint: false, idempotentHint: false, destructiveHint: true },
+  { readOnlyHint: false, idempotentHint: false, destructiveHint: true, openWorldHint: true },
   async ({ description, target, mode, verify, budget, maxIterations }) => {
     const config = loadConfig(projectPath);
     const aiConfig = getAIConfig(config);
@@ -1294,7 +1298,7 @@ server.tool(
   {
     type: z.enum(['god-class', 'feature-envy', 'shotgun-surgery', 'dead-code', 'high-coupling']).optional().describe('Detect specific smell type (omit for all)'),
   },
-  { readOnlyHint: false, idempotentHint: false, destructiveHint: true },
+  { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: false },
   async ({ type }) => {
     const engine = new RefactorEngine(store);
     const report = type ? engine.analyzeType(type) : engine.analyze();
@@ -1318,7 +1322,7 @@ server.tool(
     output: z.string().optional().describe('Output directory for foam export (defaults to .codeatlas/foam)'),
     includeSource: z.boolean().optional().default(true).describe('Include source code in Foam notes (foam only)'),
   },
-  { readOnlyHint: false, idempotentHint: true, destructiveHint: false },
+  { readOnlyHint: false, idempotentHint: true, destructiveHint: false, openWorldHint: false },
   async ({ format, layer, kind, limit, stats, output, includeSource }) => {
     if (format === 'foam') {
       const foam = new FoamExporter(store);
@@ -1358,7 +1362,7 @@ server.tool(
     baseline: z.string().optional().describe('Baseline file path to compare against'),
     save: z.string().optional().describe('Save current state as baseline'),
   },
-  { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+  { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: false },
   async ({ baseline, save }) => {
     const analyzer = new DiffAnalyzer(store);
 
@@ -1384,7 +1388,7 @@ server.tool(
     path: z.string().describe('Path to Flowtrace trace directory'),
     format: z.enum(['text', 'mermaid']).optional().default('text').describe('Output format for action="flow"'),
   },
-  { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+  { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: false },
   async ({ action, path: tracePath, format }) => {
     if (action === 'analyze') {
       const analyzer = new TraceAnalyzer(store, tracePath);
@@ -1455,7 +1459,7 @@ server.tool(
     tracePath: z.string().optional().describe('Path to Flowtrace trace directory'),
     focusStep: z.string().optional().describe('Focus on specific execution step'),
   },
-  { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+  { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: true },
   async ({ description, tracePath, focusStep }) => {
     // Get trace analysis if tracePath provided
     let traceAnalysis: string = '';
@@ -1526,7 +1530,7 @@ server.tool(
       .describe('"analyze" = RTOS/ISR/hardware analysis, "build" = build configuration, "exclude" = vendor library exclusion patterns'),
     path: z.string().optional().describe('Project path (defaults to last scan path)'),
   },
-  { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+  { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: false },
   async ({ action, path: scanPath }) => {
     const target = scanPath ? path.resolve(scanPath) : lastScannedPath;
 
@@ -1574,7 +1578,7 @@ server.tool(
   {
     provider: z.enum(['local', 'openai', 'ollama']).optional().default('local').describe('Embedding provider'),
   },
-  { readOnlyHint: false, idempotentHint: true, destructiveHint: false },
+  { readOnlyHint: false, idempotentHint: true, destructiveHint: false, openWorldHint: true },
   async ({ provider }) => {
     const generator = createEmbeddingGenerator({ provider });
     const vectorStore = new VectorStore(store, generator);
@@ -1605,7 +1609,7 @@ server.tool(
     task: z.string().describe('Task description'),
     dryRun: z.boolean().optional().default(false).describe('Only show plan, don\'t execute'),
   },
-  { readOnlyHint: false, idempotentHint: true, destructiveHint: false },
+  { readOnlyHint: false, idempotentHint: false, destructiveHint: true, openWorldHint: true },
   async ({ task, dryRun }) => {
     const config = loadConfig(projectPath);
     const aiConfig = getAIConfig(config);
@@ -1655,7 +1659,7 @@ server.tool(
   {
     path: z.string().describe('Absolute path to the project directory'),
   },
-  { readOnlyHint: false, idempotentHint: true, destructiveHint: false },
+  { readOnlyHint: false, idempotentHint: true, destructiveHint: false, openWorldHint: false },
   async ({ path: newPath }) => {
     const resolved = path.resolve(newPath);
     if (!fs.existsSync(resolved)) {
