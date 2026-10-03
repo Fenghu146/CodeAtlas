@@ -322,7 +322,7 @@ pnpm build
 
 ## 🤖 MCP 工具
 
-注册 MCP Server 后，AI 工具可使用以下 **38 个** `codeatlas_*` 工具。
+注册 MCP Server 后，AI 工具可使用以下 **28 个** `codeatlas_*` 工具（高频/只读工具已标注 MCP annotations，客户端可安全自动放行）。
 
 ### 图谱查询
 
@@ -331,8 +331,7 @@ pnpm build
 | `codeatlas_scan` | 扫描项目，构建/更新图谱 |
 | `codeatlas_search` | 按名称/关键词搜索符号 |
 | `codeatlas_node` | 获取符号详情（含源码、层级、AI 摘要） |
-| `codeatlas_callers` | 查找调用者 |
-| `codeatlas_callees` | 查找被调用者 |
+| `codeatlas_calls` | 查找调用者/被调用者（`direction`: in/out/both） |
 | `codeatlas_context` | 获取任务上下文（支持任务描述或符号名） |
 | `codeatlas_impact` | 影响分析（支持名称/ID/模糊匹配） |
 | `codeatlas_path` | 查找两符号间最短路径 |
@@ -352,46 +351,31 @@ pnpm build
 | `codeatlas_refactor` | 代码坏味道检测 |
 | `codeatlas_deps` | 依赖健康分析 |
 | `codeatlas_diff` | 图谱状态对比 |
-| `codeatlas_graph_export` | 多格式导出图谱 |
+| `codeatlas_graph_export` | 多格式导出（JSON/CSV/Mermaid/矩阵/统计/Foam vault） |
 
 ### AI / Agent
 
 | 工具 | 用途 |
 |------|------|
 | `codeatlas_explain` | AI 解释模块/符号 |
-| `codeatlas_semantic_search` | 自然语言搜索代码 |
-| `codeatlas_agent_plan` | 为编码任务生成执行计划 |
-| `codeatlas_agent_execute` | 执行编码任务（分解→分析→规划→生成→验证） |
+| `codeatlas_semantic_search` | 自然语言搜索（`mode`: auto/vector/ai，自动选向量索引或 AI 匹配） |
+| `codeatlas_semantic_index` | 构建向量嵌入索引 |
+| `codeatlas_agent_execute` | 规划或执行编码任务（`mode`: plan/execute） |
 | `codeatlas_orchestrate` | 多 Agent 编排 |
 
-### 语义搜索
+### 协作
 
 | 工具 | 用途 |
 |------|------|
-| `codeatlas_semantic_index` | 构建向量嵌入索引 |
-| `codeatlas_semantic_search_v2` | 基于嵌入的语义相似搜索 |
-
-### 协作与其他
-
-| 工具 | 用途 |
-|------|------|
-| `codeatlas_export_foam` | 导出 Foam 兼容 Markdown |
-| `codeatlas_annotate` | 为符号添加标注/评论 |
-| `codeatlas_comments` | 获取符号的全部标注 |
-| `codeatlas_resolve_annotation` | 标记标注为已解决/未解决 |
+| `codeatlas_annotate` | 标注管理（`action`: add/list/resolve） |
 
 ### 嵌入式与执行感知
 
 | 工具 | 用途 |
 |------|------|
-| `codeatlas_embedded_analyze` | 嵌入式分析（RTOS 任务 / 中断 / 硬件访问） |
-| `codeatlas_embedded_build` | 构建系统配置与库依赖 |
-| `codeatlas_embedded_exclude` | vendor / 系统库排除模式建议 |
-| `codeatlas_trace_load` | 加载 Flowtrace 执行数据 |
-| `codeatlas_trace_flow` | 展示执行流 DAG |
-| `codeatlas_trace_analyze` | 分析执行热点、失败模式、覆盖缺口 |
+| `codeatlas_embedded` | 嵌入式支持（`action`: analyze/build/exclude） |
+| `codeatlas_trace` | Flowtrace 执行数据（`action`: load/flow/analyze） |
 | `codeatlas_trace_agent` | 带执行感知的编码任务执行 |
-
 ---
 
 ## 🏗️ 架构分层

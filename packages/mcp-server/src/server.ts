@@ -349,118 +349,78 @@ server.tool(
 );
 
 // ============================================================
-// Tool: callers - Who calls this symbol?
+// Shared helper: resolve a symbol by ID or name
+// ============================================================
+type ResolvedSymbol = NonNullable<ReturnType<typeof store.getSymbol>>;
+type ResolveOutcome =
+  | { ok: true; symbol: ResolvedSymbol; symbolId: string }
+  | { ok: false; message: string };
+
+function resolveSymbol(id: string): ResolveOutcome {
+  // Try multiple ID formats (handle path separator differences)
+  let symbolId = id;
+  let symbol = store.getSymbol(id);
+  if (!symbol) {
+    const forwardId = id.replace(/\\/g, '/');
+    symbol = store.getSymbol(forwardId);
+    if (symbol) symbolId = forwardId;
+  }
+  if (!symbol) {
+    const backslashId = id.replace(/\//g, '\\');
+    symbol = store.getSymbol(backslashId);
+    if (symbol) symbolId = backslashId;
+  }
+  if (!symbol) {
+    const results = store.searchSymbols(id, { limit: 5 });
+    if (results.length === 1) {
+      symbol = results[0];
+      symbolId = results[0].id;
+    } else if (results.length > 1) {
+      const formatted = results.map(s =>
+        `- ${s.id}\n  ${s.name} (${s.kind}) @ ${s.filePath}:${s.startLine}`
+      ).join('\n');
+      return { ok: false, message: `Multiple symbols found. Please use the full ID:\n${formatted}` };
+    }
+  }
+  if (!symbol) {
+    return { ok: false, message: `Symbol "${id}" not found.` };
+  }
+  return { ok: true, symbol, symbolId };
+}
+
+// ============================================================
+// Tool: calls - Who calls this symbol and what does it call?
 // ============================================================
 server.tool(
-  'codeatlas_callers',
-  'Find all symbols that call the given symbol.',
+  'codeatlas_calls',
+  'Find callers ("who calls this symbol") and/or callees ("what this symbol calls"). Essential for safe refactoring.',
   {
     id: z.string().describe('Symbol ID or name'),
+    direction: z.enum(['in', 'out', 'both']).optional().default('in')
+      .describe('Call edge direction: "in" = callers (who calls this), "out" = callees (what this calls), "both" = both sides'),
   },
   { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
-  async ({ id }) => {
-    // Try to find symbol with multiple ID formats
-    let symbolId = id;
+  async ({ id, direction }) => {
+    const resolved = resolveSymbol(id);
+    if (!resolved.ok) {
+      return { content: [{ type: 'text' as const, text: resolved.message }] };
+    }
+    const { symbol, symbolId } = resolved;
 
-    // Try multiple ID formats (handle path separator differences)
-    let symbol = store.getSymbol(id);
-    if (!symbol) {
-      // Try with forward slashes
-      const forwardId = id.replace(/\\/g, '/');
-      symbol = store.getSymbol(forwardId);
-      if (symbol) symbolId = forwardId;
-    }
-    if (!symbol) {
-      // Try with backslashes
-      const backslashId = id.replace(/\//g, '\\');
-      symbol = store.getSymbol(backslashId);
-      if (symbol) symbolId = backslashId;
-    }
-    if (!symbol) {
-      // Try searching by name
-      const results = store.searchSymbols(id, { limit: 5 });
-      if (results.length === 1) {
-        symbol = results[0];
-        symbolId = results[0].id;
-      } else if (results.length > 1) {
-        const formatted = results.map(s =>
-          `- ${s.id}\n  ${s.name} (${s.kind}) @ ${s.filePath}:${s.startLine}`
-        ).join('\n');
-        return { content: [{ type: 'text' as const, text: `Multiple symbols found. Please use the full ID:\n${formatted}` }] };
+    const sections: string[] = [];
+    const addSection = (label: string, edges: ResolvedSymbol[]): void => {
+      if (edges.length === 0) {
+        sections.push(`No ${label.toLowerCase()} found for "${symbol.name}".`);
+        return;
       }
-    }
+      const formatted = edges.map(s => `${s.name} (${s.kind}) ${s.filePath}:${s.startLine}`).join('\n');
+      sections.push(`${edges.length} ${label.toLowerCase()}:\n${formatted}`);
+    };
 
-    if (!symbol) {
-      return { content: [{ type: 'text' as const, text: `Symbol "${id}" not found.` }] };
-    }
+    if (direction === 'in' || direction === 'both') addSection('Callers', store.getCallers(symbolId));
+    if (direction === 'out' || direction === 'both') addSection('Callees', store.getCallees(symbolId));
 
-    const callers = store.getCallers(symbolId);
-    if (callers.length === 0) {
-      return { content: [{ type: 'text' as const, text: `No callers found for "${symbol.name}".` }] };
-    }
-    // Compact format
-    const formatted = callers.map(s =>
-      `${s.name} (${s.kind}) ${s.filePath}:${s.startLine}`
-    ).join('\n');
-    return { content: [{ type: 'text' as const, text: `${callers.length} callers:\n${formatted}` }] };
-  },
-);
-
-// ============================================================
-// Tool: callees - What does this symbol call?
-// ============================================================
-server.tool(
-  'codeatlas_callees',
-  'Find all symbols that the given symbol calls.',
-  {
-    id: z.string().describe('Symbol ID or name'),
-  },
-  { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
-  async ({ id }) => {
-    // Try to find symbol with multiple ID formats
-    let symbolId = id;
-
-    // Try multiple ID formats (handle path separator differences)
-    let symbol = store.getSymbol(id);
-    if (!symbol) {
-      // Try with forward slashes
-      const forwardId = id.replace(/\\/g, '/');
-      symbol = store.getSymbol(forwardId);
-      if (symbol) symbolId = forwardId;
-    }
-    if (!symbol) {
-      // Try with backslashes
-      const backslashId = id.replace(/\//g, '\\');
-      symbol = store.getSymbol(backslashId);
-      if (symbol) symbolId = backslashId;
-    }
-    if (!symbol) {
-      // Try searching by name
-      const results = store.searchSymbols(id, { limit: 5 });
-      if (results.length === 1) {
-        symbol = results[0];
-        symbolId = results[0].id;
-      } else if (results.length > 1) {
-        const formatted = results.map(s =>
-          `- ${s.id}\n  ${s.name} (${s.kind}) @ ${s.filePath}:${s.startLine}`
-        ).join('\n');
-        return { content: [{ type: 'text' as const, text: `Multiple symbols found. Please use the full ID:\n${formatted}` }] };
-      }
-    }
-
-    if (!symbol) {
-      return { content: [{ type: 'text' as const, text: `Symbol "${id}" not found.` }] };
-    }
-
-    const callees = store.getCallees(symbolId);
-    if (callees.length === 0) {
-      return { content: [{ type: 'text' as const, text: `No callees found for "${symbol.name}".` }] };
-    }
-    // Compact format
-    const formatted = callees.map(s =>
-      `${s.name} (${s.kind}) ${s.filePath}:${s.startLine}`
-    ).join('\n');
-    return { content: [{ type: 'text' as const, text: `${callees.length} callees:\n${formatted}` }] };
+    return { content: [{ type: 'text' as const, text: sections.join('\n\n') }] };
   },
 );
 
@@ -724,34 +684,6 @@ server.tool(
 );
 
 // ============================================================
-// Tool: export_foam - Export as Foam-compatible markdown
-// ============================================================
-server.tool(
-  'codeatlas_export_foam',
-  'Export the code graph as Foam-compatible markdown files. The user can then open these in VSCode with the Foam extension to get an interactive knowledge graph visualization with layer-based coloring, wikilink navigation, and backlink discovery.',
-  {
-    outputDir: z.string().optional().describe('Output directory (default: .codeatlas/foam)'),
-    includeSource: z.boolean().optional().default(true).describe('Include source code in notes'),
-  },
-  { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
-  async ({ outputDir, includeSource }) => {
-    const exporter = new FoamExporter(store);
-    const result = await exporter.export({
-      projectPath,
-      outputDir: outputDir ? path.resolve(outputDir) : undefined,
-      includeSource,
-      includeAISummary: true,
-    });
-    return {
-      content: [{
-        type: 'text' as const,
-        text: `Foam export complete!\n- Files generated: ${result.filesGenerated}\n- Output: ${result.outputDir}\n\nTo view: Open the output folder in VSCode with Foam extension, then run "Foam: Show Graph" from the command palette.`,
-      }],
-    };
-  },
-);
-
-// ============================================================
 // Tool: explain - AI explanation of a module or symbol
 // ============================================================
 server.tool(
@@ -816,36 +748,71 @@ server.tool(
 );
 
 // ============================================================
-// Tool: semantic_search - Natural language code search
+// Tool: semantic_search - Search by meaning (embeddings or AI)
 // ============================================================
 server.tool(
   'codeatlas_semantic_search',
-  'Search for code using natural language. Uses AI to understand your query and find relevant symbols.',
+  'Search code by meaning, not just keywords. Uses vector embeddings when a semantic index exists (build with codeatlas_semantic_index), otherwise falls back to AI-based matching.',
   {
-    query: z.string().describe('Natural language search query'),
-    limit: z.number().optional().default(10).describe('Max results'),
+    query: z.string().describe('Natural language query'),
+    top: z.number().optional().default(10).describe('Number of results'),
+    mode: z.enum(['auto', 'vector', 'ai']).optional().default('auto')
+      .describe('Search strategy: "vector" uses embeddings (requires codeatlas_semantic_index), "ai" uses AI matching, "auto" prefers vector and falls back to AI'),
   },
   { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
-  async ({ query, limit }) => {
-    // Use shared explainer (connection pool)
+  async ({ query, top, mode }) => {
+    if (mode === 'vector' || mode === 'auto') {
+      const generator = createEmbeddingGenerator({ provider: 'local' });
+      const vectorStore = new VectorStore(store, generator);
+      const stats = vectorStore.getStats();
+      if (stats.indexed > 0) {
+        const hybridSearch = new HybridSearch(store, vectorStore);
+        const results = await hybridSearch.search(query, { topK: top });
+
+        if (results.length === 0) {
+          return { content: [{ type: 'text' as const, text: `No results found for "${query}".` }] };
+        }
+
+        const formatted = results.map((r, i) => {
+          const score = (r.combinedScore * 100).toFixed(1);
+          return `${i + 1}. [${score}%] **${r.symbol.name}** (${r.symbol.kind}) @ ${r.symbol.filePath}:${r.symbol.startLine}\n   Reasons: ${r.reasons.join(', ')}`;
+        }).join('\n\n');
+
+        return {
+          content: [{
+            type: 'text' as const,
+            text: `🔍 Semantic Search: "${query}"\n\n${formatted}`,
+          }],
+        };
+      }
+      if (mode === 'vector') {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: 'No embeddings indexed. Run codeatlas_semantic_index first to build the semantic index.',
+          }],
+        };
+      }
+    }
+
+    // AI-based matching (primary for mode="ai", fallback for mode="auto")
     if (!sharedExplainer) {
       return {
         content: [{
           type: 'text' as const,
-          text: 'Semantic search requires AI configuration. Please set up LLM provider in .codeatlas.yaml.',
+          text: 'AI not configured. Set ANTHROPIC_API_KEY or OPENAI_API_KEY, or build embeddings with codeatlas_semantic_index and search with mode="vector".',
         }],
       };
     }
 
     const allSymbols = store.searchSymbols('', { limit: 10000 });
-
     const results = await sharedExplainer.semanticSearch(query, allSymbols);
 
     if (results.length === 0) {
       return { content: [{ type: 'text' as const, text: `No symbols found matching "${query}".` }] };
     }
 
-    const formatted = results.slice(0, limit).map(s =>
+    const formatted = results.slice(0, top).map(s =>
       `- **${s.name}** (${s.kind}, ${s.layer}) @ ${s.filePath}:${s.startLine}`
     ).join('\n');
 
@@ -859,94 +826,74 @@ server.tool(
 );
 
 // ============================================================
-// Tool: annotate - Add annotation to a symbol
+// Tool: annotate - Add, list, or resolve symbol annotations
 // ============================================================
 server.tool(
   'codeatlas_annotate',
-  'Add a comment or annotation to a code symbol. Useful for team collaboration and code reviews.',
+  'Manage annotations on symbols: action="add" attaches a comment/TODO/issue, action="list" shows a symbol\'s annotations, action="resolve" marks one resolved or unresolved.',
   {
-    symbolId: z.string().describe('Symbol ID to annotate'),
-    content: z.string().describe('Annotation content'),
-    userId: z.string().optional().default('anonymous').describe('User identifier'),
-    type: z.enum(['comment', 'todo', 'issue', 'question']).optional().default('comment').describe('Annotation type'),
+    action: z.enum(['add', 'list', 'resolve'])
+      .describe('"add" = new annotation, "list" = show a symbol\'s annotations, "resolve" = toggle resolved state'),
+    symbolId: z.string().optional().describe('Symbol ID or name (required for add and list)'),
+    content: z.string().optional().describe('Annotation text (required for add)'),
+    userId: z.string().optional().default('anonymous').describe('User identifier (add)'),
+    type: z.enum(['comment', 'todo', 'issue', 'question']).optional().default('comment')
+      .describe('Annotation type (add)'),
+    annotationId: z.string().optional().describe('Annotation ID (required for resolve)'),
+    resolved: z.boolean().optional().default(true)
+      .describe('Mark resolved (true) or unresolved (false) — resolve only'),
   },
-  { readOnlyHint: false, idempotentHint: true, destructiveHint: false },
-  async ({ symbolId, content, userId, type }) => {
-    const symbol = store.getSymbol(symbolId);
-    if (!symbol) {
-      return { content: [{ type: 'text' as const, text: `Symbol "${symbolId}" not found.` }] };
-    }
-
-    const annotationId = store.addAnnotation(symbolId, userId, content, type);
-
-    return {
-      content: [{
-        type: 'text' as const,
-        text: `✅ Annotation added!\n\nSymbol: ${symbol.name}\nType: ${type}\nUser: ${userId}\nContent: ${content}\n\nID: ${annotationId}`,
-      }],
-    };
-  },
-);
-
-// ============================================================
-// Tool: comments - Get annotations for a symbol
-// ============================================================
-server.tool(
-  'codeatlas_comments',
-  'Get all comments and annotations for a symbol.',
-  {
-    symbolId: z.string().describe('Symbol ID'),
-  },
-  { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
-  async ({ symbolId }) => {
-    const symbol = store.getSymbol(symbolId);
-    if (!symbol) {
-      return { content: [{ type: 'text' as const, text: `Symbol "${symbolId}" not found.` }] };
-    }
-
-    const annotations = store.getAnnotations(symbolId);
-
-    if (annotations.length === 0) {
+  { readOnlyHint: false, idempotentHint: false, destructiveHint: false },
+  async ({ action, symbolId, content, userId, type, annotationId, resolved }) => {
+    if (action === 'add') {
+      if (!symbolId || !content) {
+        return { content: [{ type: 'text' as const, text: 'action="add" needs symbolId and content.' }] };
+      }
+      const target = resolveSymbol(symbolId);
+      if (!target.ok) {
+        return { content: [{ type: 'text' as const, text: target.message }] };
+      }
+      const id = store.addAnnotation(target.symbolId, userId, content, type);
       return {
         content: [{
           type: 'text' as const,
-          text: `No annotations for "${symbol.name}" yet. Use codeatlas_annotate to add one.`,
+          text: `✅ Annotation added!\n\nSymbol: ${target.symbol.name}\nType: ${type}\nUser: ${userId}\nContent: ${content}\n\nID: ${id}`,
         }],
       };
     }
 
-    const formatted = annotations.map(a =>
-      `- **${a.type}** by ${a.user_id} (${a.created_at}):\n  ${a.content}${a.resolved ? ' ✅' : ''}`
-    ).join('\n\n');
+    if (action === 'list') {
+      if (!symbolId) {
+        return { content: [{ type: 'text' as const, text: 'action="list" needs symbolId.' }] };
+      }
+      const target = resolveSymbol(symbolId);
+      if (!target.ok) {
+        return { content: [{ type: 'text' as const, text: target.message }] };
+      }
+      const annotations = store.getAnnotations(target.symbolId);
+      if (annotations.length === 0) {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: `No annotations for "${target.symbol.name}" yet. Use codeatlas_annotate with action="add".`,
+          }],
+        };
+      }
+      const formatted = annotations.map(a =>
+        `- **${a.type}** by ${a.user_id} (${a.created_at}):\n  ${a.content}${a.resolved ? ' ✅' : ''}`
+      ).join('\n\n');
+      return {
+        content: [{ type: 'text' as const, text: `Annotations for ${target.symbol.name} (${annotations.length}):\n\n${formatted}` }],
+      };
+    }
 
-    return {
-      content: [{
-        type: 'text' as const,
-        text: `Annotations for ${symbol.name} (${annotations.length}):\n\n${formatted}`,
-      }],
-    };
-  },
-);
-
-// ============================================================
-// Tool: resolve_annotation - Mark annotation as resolved
-// ============================================================
-server.tool(
-  'codeatlas_resolve_annotation',
-  'Mark an annotation as resolved or unresolved.',
-  {
-    annotationId: z.string().describe('Annotation ID'),
-    resolved: z.boolean().describe('Mark as resolved (true) or unresolved (false)'),
-  },
-  { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
-  async ({ annotationId, resolved }) => {
+    // action === 'resolve'
+    if (!annotationId) {
+      return { content: [{ type: 'text' as const, text: 'action="resolve" needs annotationId.' }] };
+    }
     store.resolveAnnotation(annotationId, resolved);
-
     return {
-      content: [{
-        type: 'text' as const,
-        text: `✅ Annotation ${resolved ? 'resolved' : 'unresolved'}.`,
-      }],
+      content: [{ type: 'text' as const, text: `✅ Annotation ${resolved ? 'resolved' : 'unresolved'}.` }],
     };
   },
 );
@@ -1278,63 +1225,24 @@ server.tool(
 );
 
 // ============================================================
-// Tool: agent_plan - Generate execution plan for a coding task
-// ============================================================
-server.tool(
-  'codeatlas_agent_plan',
-  'Analyze a coding task and generate an execution plan using the code graph. Shows affected files, risk level, and ordered steps.',
-  {
-    description: z.string().describe('Task description (e.g., "Add JWT authentication to UserService")'),
-    target: z.string().optional().describe('Target symbol to focus on'),
-  },
-  { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
-  async ({ description, target }) => {
-    const config = loadConfig(projectPath);
-    const aiConfig = getAIConfig(config);
-
-    const runtime = new AgentRuntime(store, {
-      llmProvider: aiConfig.provider,
-      llmModel: aiConfig.model,
-      llmApiKey: aiConfig.apiKey,
-      llmBaseUrl: aiConfig.baseUrl,
-    });
-
-    const plan = await runtime.plan({
-      description,
-      targetSymbol: target,
-    });
-
-    return { content: [{ type: 'text' as const, text: plan.summary }] };
-  },
-);
-
-// ============================================================
-// Tool: agent_execute - Execute a coding task (plan + generate + verify)
+// Tool: agent_execute - Plan or execute a coding task
 // ============================================================
 server.tool(
   'codeatlas_agent_execute',
-  'Execute a coding task: decompose → analyze → plan → generate → verify with iterative refinement. Uses tool orchestration (impact, guard, review, deps).',
+  'Plan or execute a coding task using the code graph. mode="plan" analyzes the task and returns an execution plan (affected files, risk level, ordered steps); mode="execute" runs decompose → analyze → plan → generate → verify with iterative refinement.',
   {
-    description: z.string().describe('Task description'),
+    description: z.string().describe('Task description (e.g., "Add JWT authentication to UserService")'),
     target: z.string().optional().describe('Target symbol to focus on'),
-    verify: z.boolean().optional().default(true).describe('Run verification after generation'),
-    budget: z.number().optional().default(8000).describe('Total token budget'),
-    maxIterations: z.number().optional().default(3).describe('Max refinement iterations'),
-    dryRun: z.boolean().optional().default(false).describe('Plan only, don\'t generate code'),
+    mode: z.enum(['plan', 'execute']).optional().default('execute')
+      .describe('"plan" = execution plan only (read-only), "execute" = full pipeline with code generation'),
+    verify: z.boolean().optional().default(true).describe('Run verification after generation (execute mode)'),
+    budget: z.number().optional().default(8000).describe('Total token budget (execute mode)'),
+    maxIterations: z.number().optional().default(3).describe('Max refinement iterations (execute mode)'),
   },
   { readOnlyHint: false, idempotentHint: false, destructiveHint: true },
-  async ({ description, target, verify, budget, maxIterations, dryRun }) => {
+  async ({ description, target, mode, verify, budget, maxIterations }) => {
     const config = loadConfig(projectPath);
     const aiConfig = getAIConfig(config);
-
-    if (!aiConfig.provider && !dryRun) {
-      return {
-        content: [{
-          type: 'text' as const,
-          text: 'AI not configured. Set ANTHROPIC_API_KEY or OPENAI_API_KEY, or use dryRun for plan-only mode.',
-        }],
-      };
-    }
 
     const runtime = new AgentRuntime(store, {
       llmProvider: aiConfig.provider,
@@ -1342,6 +1250,23 @@ server.tool(
       llmApiKey: aiConfig.apiKey,
       llmBaseUrl: aiConfig.baseUrl,
     });
+
+    if (mode === 'plan') {
+      const plan = await runtime.plan({
+        description,
+        targetSymbol: target,
+      });
+      return { content: [{ type: 'text' as const, text: plan.summary }] };
+    }
+
+    if (!aiConfig.provider) {
+      return {
+        content: [{
+          type: 'text' as const,
+          text: 'AI not configured. Set ANTHROPIC_API_KEY or OPENAI_API_KEY, or use mode="plan" for plan-only analysis.',
+        }],
+      };
+    }
 
     const result = await runtime.execute({
       description,
@@ -1349,7 +1274,7 @@ server.tool(
       autoVerify: verify,
       tokenBudget: budget,
       maxIterations,
-      dryRun,
+      dryRun: false,
       llmProvider: aiConfig.provider,
       llmModel: aiConfig.model,
       llmApiKey: aiConfig.apiKey,
@@ -1378,20 +1303,39 @@ server.tool(
 );
 
 // ============================================================
-// Tool: graph_export - Export graph data for analysis
+// Tool: graph_export - Export graph data (or a Foam vault)
 // ============================================================
 server.tool(
   'codeatlas_graph_export',
-  'Export code graph data in various formats for analysis: JSON, CSV, Mermaid, Adjacency Matrix, or Statistics. Useful for mathematical modeling and data analysis.',
+  'Export code graph data in various formats: JSON, CSV, Mermaid, Adjacency Matrix, Statistics, or a Foam (Obsidian) markdown vault. Useful for mathematical modeling and data analysis.',
   {
-    format: z.enum(['json', 'csv', 'mermaid', 'matrix', 'stats']).optional().default('json').describe('Export format'),
+    format: z.enum(['json', 'csv', 'mermaid', 'matrix', 'stats', 'foam']).optional().default('json')
+      .describe('Export format; "foam" writes a Markdown vault directory'),
     layer: z.string().optional().describe('Filter by layer (interface|business|data|utility)'),
     kind: z.string().optional().describe('Filter by symbol kind (class|function|method|etc)'),
     limit: z.number().optional().default(100).describe('Max nodes to export'),
     stats: z.boolean().optional().default(false).describe('Show graph statistics only'),
+    output: z.string().optional().describe('Output directory for foam export (defaults to .codeatlas/foam)'),
+    includeSource: z.boolean().optional().default(true).describe('Include source code in Foam notes (foam only)'),
   },
-  { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
-  async ({ format, layer, kind, limit, stats }) => {
+  { readOnlyHint: false, idempotentHint: true, destructiveHint: false },
+  async ({ format, layer, kind, limit, stats, output, includeSource }) => {
+    if (format === 'foam') {
+      const foam = new FoamExporter(store);
+      const result = await foam.export({
+        projectPath,
+        outputDir: output ? path.resolve(output) : undefined,
+        includeSource,
+        includeAISummary: true,
+      });
+      return {
+        content: [{
+          type: 'text' as const,
+          text: `📁 Foam export complete:\n- Files generated: ${result.filesGenerated}\n- Output directory: ${result.outputDir}\n\nImport as an Obsidian/Foam vault to view the knowledge graph.`,
+        }],
+      };
+    }
+
     const exporter = new GraphExporter(store);
 
     if (stats) {
@@ -1429,26 +1373,57 @@ server.tool(
 );
 
 // ============================================================
-// Tool: trace_load - Load Flowtrace data
+// Tool: trace - Inspect Flowtrace execution traces
 // ============================================================
 server.tool(
-  'codeatlas_trace_load',
-  'Load Flowtrace execution data from a trace directory. Combines static code analysis with runtime execution history.',
+  'codeatlas_trace',
+  'Inspect a Flowtrace execution trace: action="load" shows trace metadata and steps, action="flow" shows the execution DAG (text or Mermaid), action="analyze" finds hot paths, failure patterns, and coverage gaps.',
   {
+    action: z.enum(['load', 'flow', 'analyze'])
+      .describe('"load" = trace metadata and steps, "flow" = execution DAG, "analyze" = hot paths / failures / coverage'),
     path: z.string().describe('Path to Flowtrace trace directory'),
+    format: z.enum(['text', 'mermaid']).optional().default('text').describe('Output format for action="flow"'),
   },
   { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
-  async ({ path: tracePath }) => {
+  async ({ action, path: tracePath, format }) => {
+    if (action === 'analyze') {
+      const analyzer = new TraceAnalyzer(store, tracePath);
+      const result = analyzer.analyze();
+      if (!result) {
+        return { content: [{ type: 'text' as const, text: 'Could not analyze trace. Make sure trace.json exists.' }] };
+      }
+      return { content: [{ type: 'text' as const, text: result.summary }] };
+    }
+
     const reader = new TraceReader(tracePath);
     const data = reader.load();
-
     if (!data) {
       return { content: [{ type: 'text' as const, text: `No trace found at "${tracePath}". Make sure trace.json exists.` }] };
     }
-
-    const stats = reader.getStats();
     const steps = reader.getStepsWithContext();
 
+    if (action === 'flow') {
+      const stepsWithUpstream = steps.filter(s => s.upstream.length > 0);
+      if (format === 'mermaid') {
+        const mermaid = [
+          '```mermaid',
+          'flowchart TD',
+          ...steps.map(s => `  ${s.id}["${s.spec.name}"]`),
+          ...stepsWithUpstream.map(s => s.upstream.map(u => `  ${u} --> ${s.id}`).join('\n')),
+          '```',
+        ].join('\n');
+        return { content: [{ type: 'text' as const, text: `📈 Execution Flow:\n\n${mermaid}` }] };
+      }
+      const parts: string[] = [`📈 Execution Flow (${steps.length} steps):\n`];
+      for (const s of steps) {
+        const upstream = s.upstream.length > 0 ? ` ← ${s.upstream.join(', ')}` : '';
+        parts.push(`  ${s.id}: ${s.spec.name}${upstream}`);
+      }
+      return { content: [{ type: 'text' as const, text: parts.join('\n') }] };
+    }
+
+    // action === 'load'
+    const stats = reader.getStats();
     const parts: string[] = [];
     parts.push(`📋 Trace: ${data.spec.title}`);
     parts.push(`ID: ${data.spec.id} | Version: ${data.spec.version}`);
@@ -1465,87 +1440,7 @@ server.tool(
       parts.push(`  [${status}] ${step.id}: ${step.spec.name}`);
     }
     if (steps.length > 10) parts.push(`  ... and ${steps.length - 10} more`);
-
     return { content: [{ type: 'text' as const, text: parts.join('\n') }] };
-  },
-);
-
-// ============================================================
-// Tool: trace_flow - Show execution flow DAG
-// ============================================================
-server.tool(
-  'codeatlas_trace_flow',
-  'Show the execution flow DAG from a Flowtrace trace.',
-  {
-    path: z.string().describe('Path to Flowtrace trace directory'),
-    format: z.enum(['text', 'mermaid']).optional().default('text').describe('Output format'),
-  },
-  { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
-  async ({ path: tracePath, format }) => {
-    const reader = new TraceReader(tracePath);
-    const steps = reader.getStepsWithContext();
-
-    if (steps.length === 0) {
-      return { content: [{ type: 'text' as const, text: 'No steps found in trace.' }] };
-    }
-
-    if (format === 'mermaid') {
-      const lines = ['graph LR'];
-      for (const step of steps) {
-        lines.push(`    ${step.id}["${step.spec.name}"]`);
-      }
-      for (const step of steps) {
-        for (const upstream of step.upstream) {
-          lines.push(`    ${upstream} --> ${step.id}`);
-        }
-      }
-      return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
-    }
-
-    // Text format: show by levels
-    const levels: string[][] = [];
-    const levelMap = new Map<string, number>();
-
-    for (const step of steps) {
-      const maxUpstream = step.upstream.reduce((max, u) => Math.max(max, (levelMap.get(u) ?? -1) + 1), 0);
-      levelMap.set(step.id, maxUpstream);
-    }
-
-    const maxLevel = Math.max(...Array.from(levelMap.values()), 0);
-    for (let i = 0; i <= maxLevel; i++) {
-      const level = steps.filter(s => levelMap.get(s.id) === i).map(s => s.id);
-      if (level.length > 0) levels.push(level);
-    }
-
-    const parts: string[] = [];
-    parts.push(`Execution Flow (${steps.length} steps):\n`);
-    for (let i = 0; i < levels.length; i++) {
-      parts.push(`Level ${i + 1}: ${levels[i].join(' → ')}`);
-    }
-
-    return { content: [{ type: 'text' as const, text: parts.join('\n') }] };
-  },
-);
-
-// ============================================================
-// Tool: trace_analyze - Analyze execution flow
-// ============================================================
-server.tool(
-  'codeatlas_trace_analyze',
-  'Analyze execution flow from Flowtrace: find hot paths, failure patterns, and coverage gaps.',
-  {
-    path: z.string().describe('Path to Flowtrace trace directory'),
-  },
-  { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
-  async ({ path: tracePath }) => {
-    const analyzer = new TraceAnalyzer(store, tracePath);
-    const result = analyzer.analyze();
-
-    if (!result) {
-      return { content: [{ type: 'text' as const, text: 'Could not analyze trace. Make sure trace.json exists.' }] };
-    }
-
-    return { content: [{ type: 'text' as const, text: result.summary }] };
   },
 );
 
@@ -1621,69 +1516,46 @@ server.tool(
 );
 
 // ============================================================
-// Tool: embedded_analyze - Analyze embedded systems code
+// Tool: embedded - Embedded project analysis and configuration
 // ============================================================
 server.tool(
-  'codeatlas_embedded_analyze',
-  'Analyze embedded systems code: detect RTOS tasks, interrupt handlers, hardware access, and build configuration.',
+  'codeatlas_embedded',
+  'Embedded project support: action="analyze" detects RTOS tasks, interrupt handlers, and hardware access; action="build" shows build system configuration and libraries; action="exclude" lists recommended vendor library exclusion patterns.',
   {
+    action: z.enum(['analyze', 'build', 'exclude'])
+      .describe('"analyze" = RTOS/ISR/hardware analysis, "build" = build configuration, "exclude" = vendor library exclusion patterns'),
     path: z.string().optional().describe('Project path (defaults to last scan path)'),
   },
   { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
-  async ({ path: scanPath }) => {
+  async ({ action, path: scanPath }) => {
     const target = scanPath ? path.resolve(scanPath) : lastScannedPath;
-    const analyzer = new EmbeddedAnalyzer(store, target);
-    const result = analyzer.analyze();
-    return { content: [{ type: 'text' as const, text: result.summary }] };
-  },
-);
 
-// ============================================================
-// Tool: embedded_build - Show build configuration
-// ============================================================
-server.tool(
-  'codeatlas_embedded_build',
-  'Show build system configuration (platformio.ini, CMakeLists.txt, etc.) and library dependencies.',
-  {
-    path: z.string().optional().describe('Project path (defaults to last scan path)'),
-  },
-  { readOnlyHint: false, idempotentHint: true, destructiveHint: false },
-  async ({ path: scanPath }) => {
-    const target = scanPath ? path.resolve(scanPath) : lastScannedPath;
-    const analyzer = new BuildAnalyzer(target);
-    const config = analyzer.analyze();
-
-    const parts: string[] = [];
-    parts.push(`📦 Build System: ${config.type}`);
-    if (config.platform) parts.push(`Platform: ${config.platform}`);
-    if (config.board) parts.push(`Board: ${config.board}`);
-    if (config.framework) parts.push(`Framework: ${config.framework}`);
-    if (config.dependencies.length > 0) {
-      parts.push(`\nLibraries (${config.dependencies.length}):`);
-      for (const dep of config.dependencies.slice(0, 10)) {
-        parts.push(`  - ${dep}`);
-      }
+    if (action === 'analyze') {
+      const analyzer = new EmbeddedAnalyzer(store, target);
+      const result = analyzer.analyze();
+      return { content: [{ type: 'text' as const, text: result.summary }] };
     }
 
-    return { content: [{ type: 'text' as const, text: parts.join('\n') }] };
-  },
-);
-
-// ============================================================
-// Tool: embedded_exclude - Get exclusion patterns for vendor libs
-// ============================================================
-server.tool(
-  'codeatlas_embedded_exclude',
-  'Get recommended exclusion patterns for vendor/system libraries in embedded projects.',
-  {
-    path: z.string().optional().describe('Project path (defaults to last scan path)'),
-  },
-  { readOnlyHint: false, idempotentHint: true, destructiveHint: false },
-  async ({ path: scanPath }) => {
-    const target = scanPath ? path.resolve(scanPath) : lastScannedPath;
     const analyzer = new BuildAnalyzer(target);
-    const patterns = analyzer.getExcludePatterns();
 
+    if (action === 'build') {
+      const config = analyzer.analyze();
+      const parts: string[] = [];
+      parts.push(`📦 Build System: ${config.type}`);
+      if (config.platform) parts.push(`Platform: ${config.platform}`);
+      if (config.board) parts.push(`Board: ${config.board}`);
+      if (config.framework) parts.push(`Framework: ${config.framework}`);
+      if (config.dependencies.length > 0) {
+        parts.push(`\nLibraries (${config.dependencies.length}):`);
+        for (const dep of config.dependencies.slice(0, 10)) {
+          parts.push(`  - ${dep}`);
+        }
+      }
+      return { content: [{ type: 'text' as const, text: parts.join('\n') }] };
+    }
+
+    // action === 'exclude'
+    const patterns = analyzer.getExcludePatterns();
     return {
       content: [{
         type: 'text' as const,
@@ -1718,53 +1590,6 @@ server.tool(
       content: [{
         type: 'text' as const,
         text: `✅ Semantic index built!\n- Indexed: ${indexed} symbols\n- Provider: ${provider}\n- Dimension: ${generator.getDimension()}`,
-      }],
-    };
-  },
-);
-
-// ============================================================
-// Tool: semantic_search - Search by meaning
-// ============================================================
-server.tool(
-  'codeatlas_semantic_search_v2',
-  'Search code by meaning, not just keywords. Uses vector embeddings for semantic similarity.',
-  {
-    query: z.string().describe('Natural language query'),
-    top: z.number().optional().default(10).describe('Number of results'),
-  },
-  { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
-  async ({ query, top }) => {
-    const generator = createEmbeddingGenerator({ provider: 'local' });
-    const vectorStore = new VectorStore(store, generator);
-
-    // Check if indexed
-    const stats = vectorStore.getStats();
-    if (stats.indexed === 0) {
-      return {
-        content: [{
-          type: 'text' as const,
-          text: 'No embeddings indexed. Run codeatlas_semantic_index first to build the semantic index.',
-        }],
-      };
-    }
-
-    const hybridSearch = new HybridSearch(store, vectorStore);
-    const results = await hybridSearch.search(query, { topK: top });
-
-    if (results.length === 0) {
-      return { content: [{ type: 'text' as const, text: `No results found for "${query}".` }] };
-    }
-
-    const formatted = results.map((r, i) => {
-      const score = (r.combinedScore * 100).toFixed(1);
-      return `${i + 1}. [${score}%] **${r.symbol.name}** (${r.symbol.kind}) @ ${r.symbol.filePath}:${r.symbol.startLine}\n   Reasons: ${r.reasons.join(', ')}`;
-    }).join('\n\n');
-
-    return {
-      content: [{
-        type: 'text' as const,
-        text: `🔍 Semantic Search: "${query}"\n\n${formatted}`,
       }],
     };
   },
