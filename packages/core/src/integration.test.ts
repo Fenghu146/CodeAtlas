@@ -3,7 +3,7 @@
 // ============================================================
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
-import { CodeParser } from './parser/index.js';
+import { ParserPool, type ParseJob } from './parser/parser-pool.js';
 import { GraphBuilder } from './graph/builder.js';
 import { SQLiteStore } from './store/sqlite-store.js';
 import { ProjectScanner } from './scanner/scanner.js';
@@ -14,7 +14,6 @@ const TEST_DB_PATH = path.join(process.cwd(), '.codeatlas', 'test-integration.sq
 const TEST_PROJECT_PATH = path.join(process.cwd(), '.codeatlas', 'test-project');
 
 describe('Integration Tests', () => {
-  let parser: CodeParser;
   let graphBuilder: GraphBuilder;
   let store: SQLiteStore;
 
@@ -63,11 +62,10 @@ describe('Integration Tests', () => {
       `
     );
 
-    // Initialize components
-    parser = new CodeParser();
-    await parser.init();
-    await parser.loadLanguage('typescript');
-
+    // Initialize components. Parsing goes through ParserPool rather than an
+    // in-process CodeParser: that is the path scans use, and it keeps this
+    // test runner from loading a full grammar WASM of its own (measured at a
+    // ~750MB RSS spike here, on top of what every parse worker needs).
     graphBuilder = new GraphBuilder();
 
     // Ensure test directory exists
@@ -95,24 +93,38 @@ describe('Integration Tests', () => {
   });
 
   describe('Parser + Graph Builder', () => {
-    it('should parse files and build graph', () => {
+    it('should parse files and build graph', async () => {
       const indexCode = fs.readFileSync(path.join(TEST_PROJECT_PATH, 'index.ts'), 'utf-8');
       const userCode = fs.readFileSync(path.join(TEST_PROJECT_PATH, 'services', 'user.ts'), 'utf-8');
 
-      const result1 = parser.parse(indexCode, 'index.ts');
-      const result2 = parser.parse(userCode, 'services/user.ts');
+      // Parse through ParserPool — the path real scans use — instead of an
+      // in-process CodeParser, which would load a full grammar WASM into the
+      // test runner process on top of what every parse worker needs.
+      const pool = new ParserPool({ maxWorkers: 1 });
+      try {
+        const jobs: ParseJob[] = [
+          { filePath: 'index.ts', content: indexCode },
+          { filePath: 'services/user.ts', content: userCode },
+        ];
+        const outcomes = await pool.parseMany(jobs);
+        expect(outcomes.every((o) => o.ok)).toBe(true);
+        const [first, second] = outcomes;
+        if (!first.ok || !second.ok) throw new Error('parse failed');
 
-      expect(result1.symbols.length).toBeGreaterThan(0);
-      expect(result2.symbols.length).toBeGreaterThan(0);
+        expect(first.result.symbols.length).toBeGreaterThan(0);
+        expect(second.result.symbols.length).toBeGreaterThan(0);
 
-      // Build graph (pass ParseResult[])
-      const files = new Map([
-        ['index.ts', { path: 'index.ts', language: 'typescript', size: 100, lineCount: 10, hash: 'abc' }],
-        ['services/user.ts', { path: 'services/user.ts', language: 'typescript', size: 200, lineCount: 15, hash: 'def' }],
-      ]);
+        // Build graph (pass ParseResult[])
+        const files = new Map([
+          ['index.ts', { path: 'index.ts', language: 'typescript', size: 100, lineCount: 10, hash: 'abc' }],
+          ['services/user.ts', { path: 'services/user.ts', language: 'typescript', size: 200, lineCount: 15, hash: 'def' }],
+        ]);
 
-      const graph = graphBuilder.build([result1, result2], files);
-      expect(graph.symbols.size).toBeGreaterThan(0);
+        const graph = graphBuilder.build([first.result, second.result], files);
+        expect(graph.symbols.size).toBeGreaterThan(0);
+      } finally {
+        await pool.destroy();
+      }
     });
   });
 

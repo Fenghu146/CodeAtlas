@@ -8,5 +8,10 @@ export default defineConfig({
     exclude: ['node_modules', 'dist'],
     testTimeout: 30000,
     hookTimeout: 30000,
+    // Test files spawn parser child processes of their own; on small machines
+    // an unbounded fork pool starves both and workers time out mid-startup.
+    fileParallelism: false,
+    pool: 'forks',
+    maxForks: 1,
   },
 });

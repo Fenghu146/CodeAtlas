@@ -10,6 +10,16 @@ export interface ScanConfig {
   include?: string[];
   exclude?: string[];
   languages?: string[];
+  /**
+   * Concurrent parser workers (default: min(4, cpu/2)).
+   * Workers are recycled after `workerMaxFiles` files or `workerMaxRssMb` MB so
+   * long scans stay within a bounded memory budget (see parser/parser-pool.ts).
+   */
+  maxParallel?: number;
+  /** Recycle each parser worker after this many files (default 25). */
+  workerMaxFiles?: number;
+  /** Recycle a parser worker once its RSS exceeds this many MB (default 512). */
+  workerMaxRssMb?: number;
 }
 
 export interface LayerRuleConfig {

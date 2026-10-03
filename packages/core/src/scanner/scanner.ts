@@ -7,7 +7,8 @@ import fs from 'fs';
 import crypto from 'crypto';
 import { glob } from 'glob';
 import ignore from 'ignore';
-import { CodeParser, detectLanguage } from '../parser/index.js';
+import { detectLanguage } from '../parser/index.js';
+import { ParserPool, type ParseJob } from '../parser/parser-pool.js';
 import { GraphBuilder } from '../graph/builder.js';
 import { SQLiteStore } from '../store/sqlite-store.js';
 import { ModuleExplainer } from '../analyzer/module-explainer.js';
@@ -39,12 +40,10 @@ export interface ScanResult {
  * Orchestrates the complete scanning pipeline with timeout recovery.
  */
 export class ProjectScanner {
-  private parser: CodeParser;
   private graphBuilder: GraphBuilder;
   private store: SQLiteStore;
 
   constructor(store: SQLiteStore) {
-    this.parser = new CodeParser();
     this.graphBuilder = new GraphBuilder();
     this.store = store;
   }
@@ -68,9 +67,6 @@ export class ProjectScanner {
       logger.info(`   Auto-triggering full scan...`);
       forceFull = true;
     }
-
-    // Initialize parser
-    await this.parser.init();
 
     // Discover files
     const files = await this.discoverFiles(projectPath, {
@@ -102,13 +98,10 @@ export class ProjectScanner {
       console.warn(`⚠️  Skipping ${invalidPaths} invalid/inaccessible path(s)`);
     }
 
-    // Load required languages
+    // Languages needed for the scan report — workers load their own grammars.
     const languagesNeeded = new Set(
       toParse.map(f => detectLanguage(f)).filter(Boolean) as string[]
     );
-    for (const lang of languagesNeeded) {
-      await this.parser.loadLanguage(lang);
-    }
 
     // Parse files with timeout protection — scale for large projects (Godot: 10K+ files)
     const BATCH_SIZE = toParse.length > 5000 ? 50 : toParse.length > 2000 ? 30 : toParse.length > 500 ? 15 : 10;
@@ -128,6 +121,20 @@ export class ProjectScanner {
     const scanStartTime = Date.now();
     let timedOut = false;
 
+    // Bounded-memory parse scheduling: tree-sitter WASM leaks per parse, so
+    // parsing runs in recyclable workers (see parser/parser-pool.ts).
+    const parserPool = new ParserPool({
+      maxWorkers: config.scan?.maxParallel,
+      maxFilesPerWorker: config.scan?.workerMaxFiles,
+      maxRssMb: config.scan?.workerMaxRssMb,
+      jobTimeoutMs: PARSE_TIMEOUT,
+      onEvent: (event) => {
+        if (event.type === 'recycle') {
+          logger.debug(`Parser worker recycled (${event.reason}) after ${event.jobsDone} files`);
+        }
+      },
+    });
+
     for (let i = 0; i < toParse.length && !timedOut; i += BATCH_SIZE) {
       // Check overall timeout
       if (Date.now() - scanStartTime > SCAN_TIMEOUT) {
@@ -137,58 +144,58 @@ export class ProjectScanner {
       }
 
       const batch = toParse.slice(i, i + BATCH_SIZE);
-      const batchResults = await Promise.allSettled(
-        batch.map(async (absolutePath, batchIndex) => {
-          const relativePath = path.relative(projectPath, absolutePath);
-          const globalIndex = i + batchIndex + 1;
-          options.onProgress?.(globalIndex, toParse.length, relativePath);
+      const jobs: ParseJob[] = [];
+      const jobMeta = new Map<string, { hash: string; size: number; lineCount: number }>();
 
-          // Skip large files
-          try {
-            const stats = fs.statSync(absolutePath);
-            if (stats.size > MAX_FILE_SIZE) {
-              return null;
-            }
-          } catch {
-            return null;
+      for (let batchIndex = 0; batchIndex < batch.length; batchIndex++) {
+        const absolutePath = batch[batchIndex];
+        const relativePath = path.relative(projectPath, absolutePath);
+        const globalIndex = i + batchIndex + 1;
+        options.onProgress?.(globalIndex, toParse.length, relativePath);
+
+        // Skip large files / unreadable files
+        try {
+          const stats = fs.statSync(absolutePath);
+          if (stats.size > MAX_FILE_SIZE) {
+            continue;
           }
-
-          try {
-            const sourceCode = fs.readFileSync(absolutePath, 'utf-8');
-
-            // Parse with timeout
-            const result = await Promise.race([
-              Promise.resolve(this.parser.parse(sourceCode, relativePath)),
-              new Promise<never>((_, reject) =>
-                setTimeout(() => reject(new Error('Parse timeout')), PARSE_TIMEOUT)
-              ),
-            ]);
-
-            const hash = crypto.createHash('sha256').update(sourceCode).digest('hex');
-            const fileInfo: FileInfo = {
-              path: relativePath,
-              language: result.language,
-              size: Buffer.byteLength(sourceCode),
-              lineCount: sourceCode.split('\n').length,
-              hash,
-              parsedAt: new Date().toISOString(),
-            };
-
-            return { result, fileInfo };
-          } catch (err) {
-            parseErrors++;
-            return null;
-          }
-        })
-      );
-
-      // Collect successful results
-      for (const item of batchResults) {
-        if (item.status === 'fulfilled' && item.value) {
-          parseResults.push(item.value.result);
-          fileInfoMap.set(item.value.fileInfo.path, item.value.fileInfo);
-          parseResultsSinceFlush++;
+        } catch {
+          continue;
         }
+
+        try {
+          const sourceCode = fs.readFileSync(absolutePath, 'utf-8');
+          jobMeta.set(relativePath, {
+            hash: crypto.createHash('sha256').update(sourceCode).digest('hex'),
+            size: Buffer.byteLength(sourceCode),
+            lineCount: sourceCode.split('\n').length,
+          });
+          jobs.push({ filePath: relativePath, content: sourceCode });
+        } catch {
+          parseErrors++;
+        }
+      }
+
+      // Parse through the worker pool (bounded memory, parallel); outcomes keep input order.
+      const outcomes = await parserPool.parseMany(jobs);
+      for (const outcome of outcomes) {
+        if (!outcome.ok) {
+          parseErrors++;
+          continue;
+        }
+        const meta = jobMeta.get(outcome.filePath);
+        if (!meta) continue;
+        const fileInfo: FileInfo = {
+          path: outcome.filePath,
+          language: outcome.result.language,
+          size: meta.size,
+          lineCount: meta.lineCount,
+          hash: meta.hash,
+          parsedAt: new Date().toISOString(),
+        };
+        parseResults.push(outcome.result);
+        fileInfoMap.set(fileInfo.path, fileInfo);
+        parseResultsSinceFlush++;
       }
 
       // Streaming flush: periodically save symbols to DB and free memory
@@ -205,6 +212,8 @@ export class ProjectScanner {
         parseResultsSinceFlush = 0;
       }
     }
+
+    await parserPool.destroy();
 
     if (parseErrors > 0) {
       console.warn(`⚠️  ${parseErrors} files failed to parse`);

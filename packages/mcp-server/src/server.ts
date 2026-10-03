@@ -218,6 +218,7 @@ server.tool(
     exclude: z.array(z.string()).optional().describe('Additional directories to exclude (e.g., ["lib", "vendor"])'),
     profile: z.enum(['default', 'embedded-mcu', 'embedded-linux']).optional().describe('Scan profile: embedded-linux includes Kconfig, DTS, Yocto, systemd files.'),
   },
+  { readOnlyHint: false, idempotentHint: true, destructiveHint: false },
   async ({ path: scanPath, full, exclude, profile }) => {
     const target = scanPath ? path.resolve(scanPath) : projectPath;
     try {
@@ -257,6 +258,7 @@ server.tool(
     layer: z.enum(['interface', 'business', 'data', 'utility']).optional().describe('Filter by architectural layer'),
     limit: z.number().optional().default(20).describe('Max results'),
   },
+  { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
   async ({ query, kind, layer, limit }) => {
     // Try FTS search first
     let results = store.searchSymbols(query, { kind: kind as any, layer: layer as any, limit });
@@ -298,6 +300,7 @@ server.tool(
   {
     id: z.string().describe('Symbol ID (format: filePath:name:line) or symbol name'),
   },
+  { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
   async ({ id }) => {
     // Try multiple ID formats
     let symbol = store.getSymbol(id);
@@ -354,6 +357,7 @@ server.tool(
   {
     id: z.string().describe('Symbol ID or name'),
   },
+  { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
   async ({ id }) => {
     // Try to find symbol with multiple ID formats
     let symbolId = id;
@@ -411,6 +415,7 @@ server.tool(
   {
     id: z.string().describe('Symbol ID or name'),
   },
+  { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
   async ({ id }) => {
     // Try to find symbol with multiple ID formats
     let symbolId = id;
@@ -470,6 +475,7 @@ server.tool(
     symbol: z.string().optional().describe('Symbol name or ID for comprehensive context'),
     maxTokens: z.number().optional().default(3000).describe('Max tokens for context'),
   },
+  { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
   async ({ task, symbol, maxTokens }) => {
     // Symbol-based context mode
     if (symbol) {
@@ -574,6 +580,7 @@ server.tool(
     id: z.string().describe('Symbol ID, name, or fuzzy match'),
     depth: z.number().optional().default(2).describe('Max traversal depth (default: 2)'),
   },
+  { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
   async ({ id, depth }) => {
     // Try to find symbol with fuzzy matching
     let symbolId = id;
@@ -631,6 +638,7 @@ server.tool(
   'codeatlas_layers',
   'View the architectural layer classification of the project.',
   {},
+  { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
   async () => {
     const stats = store.getStats();
     const layers = ['interface', 'business', 'data', 'utility'] as const;
@@ -667,6 +675,7 @@ server.tool(
     layers: z.array(z.string()).optional().describe('Filter by layers'),
     limit: z.number().optional().default(200).describe('Max nodes to return'),
   },
+  { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
   async ({ layers, limit }) => {
     // Get symbols, optionally filtered by layers
     let allSymbols: any[] = [];
@@ -724,6 +733,7 @@ server.tool(
     outputDir: z.string().optional().describe('Output directory (default: .codeatlas/foam)'),
     includeSource: z.boolean().optional().default(true).describe('Include source code in notes'),
   },
+  { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
   async ({ outputDir, includeSource }) => {
     const exporter = new FoamExporter(store);
     const result = await exporter.export({
@@ -751,6 +761,7 @@ server.tool(
     id: z.string().optional().describe('Symbol ID (format: filePath:name:startLine)'),
     path: z.string().optional().describe('File path to explain all symbols in'),
   },
+  { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
   async ({ id, path: filePath }) => {
     // Use shared explainer (connection pool)
     if (!sharedExplainer) {
@@ -814,6 +825,7 @@ server.tool(
     query: z.string().describe('Natural language search query'),
     limit: z.number().optional().default(10).describe('Max results'),
   },
+  { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
   async ({ query, limit }) => {
     // Use shared explainer (connection pool)
     if (!sharedExplainer) {
@@ -858,6 +870,7 @@ server.tool(
     userId: z.string().optional().default('anonymous').describe('User identifier'),
     type: z.enum(['comment', 'todo', 'issue', 'question']).optional().default('comment').describe('Annotation type'),
   },
+  { readOnlyHint: false, idempotentHint: true, destructiveHint: false },
   async ({ symbolId, content, userId, type }) => {
     const symbol = store.getSymbol(symbolId);
     if (!symbol) {
@@ -884,6 +897,7 @@ server.tool(
   {
     symbolId: z.string().describe('Symbol ID'),
   },
+  { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
   async ({ symbolId }) => {
     const symbol = store.getSymbol(symbolId);
     if (!symbol) {
@@ -924,6 +938,7 @@ server.tool(
     annotationId: z.string().describe('Annotation ID'),
     resolved: z.boolean().describe('Mark as resolved (true) or unresolved (false)'),
   },
+  { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
   async ({ annotationId, resolved }) => {
     store.resolveAnnotation(annotationId, resolved);
 
@@ -943,6 +958,7 @@ server.tool(
   'codeatlas_summary',
   'Get a quick overview of the project: file count, symbol count, layer distribution, and key modules. Use this first to understand the codebase.',
   {},
+  { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
   async () => {
     const stats = store.getStats();
 
@@ -1003,6 +1019,7 @@ server.tool(
   {
     limit: z.number().optional().default(10).describe('Max results'),
   },
+  { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
   async ({ limit }) => {
     const allSymbols = store.searchSymbols('', { limit: 10000 });
     const symbolIds = allSymbols.map(s => s.id);
@@ -1102,6 +1119,7 @@ server.tool(
   {
     limit: z.number().optional().default(10).describe('Max files to show'),
   },
+  { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
   async ({ limit }) => {
     // Get files sorted by parsed_at (most recent first)
     const recentFiles = store.getRecentFiles(limit);
@@ -1141,6 +1159,7 @@ server.tool(
   {
     circular: z.boolean().optional().default(false).describe('Only show circular dependencies'),
   },
+  { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
   async ({ circular }) => {
     const analyzer = new DepAnalyzer(store, projectPath);
     const result = analyzer.analyze();
@@ -1170,6 +1189,7 @@ server.tool(
     smart: z.boolean().optional().default(true).describe('Use graph-aware context (saves ~90% tokens)'),
     budget: z.number().optional().default(4000).describe('Token budget for smart mode'),
   },
+  { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
   async ({ files, focus, depth, smart, budget }) => {
     const config = loadConfig(projectPath);
     const aiConfig = getAIConfig(config);
@@ -1220,6 +1240,7 @@ server.tool(
     forbidCircular: z.boolean().optional().default(true).describe('Fail on circular dependencies'),
     maxComplexity: z.number().optional().default(50).describe('Max complexity per symbol'),
   },
+  { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
   async ({ maxDepth, forbidCircular, maxComplexity }) => {
     const analyzer = new GuardAnalyzer(store, {
       maxImpactDepth: maxDepth,
@@ -1248,6 +1269,7 @@ server.tool(
     target: z.string().describe('Target symbol ID or name'),
     maxDepth: z.number().optional().default(6).describe('Max path length'),
   },
+  { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
   async ({ source, target, maxDepth }) => {
     const finder = new PathFinder(store);
     const result = finder.find(source, target, maxDepth);
@@ -1265,6 +1287,7 @@ server.tool(
     description: z.string().describe('Task description (e.g., "Add JWT authentication to UserService")'),
     target: z.string().optional().describe('Target symbol to focus on'),
   },
+  { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
   async ({ description, target }) => {
     const config = loadConfig(projectPath);
     const aiConfig = getAIConfig(config);
@@ -1299,6 +1322,7 @@ server.tool(
     maxIterations: z.number().optional().default(3).describe('Max refinement iterations'),
     dryRun: z.boolean().optional().default(false).describe('Plan only, don\'t generate code'),
   },
+  { readOnlyHint: false, idempotentHint: false, destructiveHint: true },
   async ({ description, target, verify, budget, maxIterations, dryRun }) => {
     const config = loadConfig(projectPath);
     const aiConfig = getAIConfig(config);
@@ -1345,6 +1369,7 @@ server.tool(
   {
     type: z.enum(['god-class', 'feature-envy', 'shotgun-surgery', 'dead-code', 'high-coupling']).optional().describe('Detect specific smell type (omit for all)'),
   },
+  { readOnlyHint: false, idempotentHint: false, destructiveHint: true },
   async ({ type }) => {
     const engine = new RefactorEngine(store);
     const report = type ? engine.analyzeType(type) : engine.analyze();
@@ -1365,6 +1390,7 @@ server.tool(
     limit: z.number().optional().default(100).describe('Max nodes to export'),
     stats: z.boolean().optional().default(false).describe('Show graph statistics only'),
   },
+  { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
   async ({ format, layer, kind, limit, stats }) => {
     const exporter = new GraphExporter(store);
 
@@ -1388,6 +1414,7 @@ server.tool(
     baseline: z.string().optional().describe('Baseline file path to compare against'),
     save: z.string().optional().describe('Save current state as baseline'),
   },
+  { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
   async ({ baseline, save }) => {
     const analyzer = new DiffAnalyzer(store);
 
@@ -1410,6 +1437,7 @@ server.tool(
   {
     path: z.string().describe('Path to Flowtrace trace directory'),
   },
+  { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
   async ({ path: tracePath }) => {
     const reader = new TraceReader(tracePath);
     const data = reader.load();
@@ -1452,6 +1480,7 @@ server.tool(
     path: z.string().describe('Path to Flowtrace trace directory'),
     format: z.enum(['text', 'mermaid']).optional().default('text').describe('Output format'),
   },
+  { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
   async ({ path: tracePath, format }) => {
     const reader = new TraceReader(tracePath);
     const steps = reader.getStepsWithContext();
@@ -1507,6 +1536,7 @@ server.tool(
   {
     path: z.string().describe('Path to Flowtrace trace directory'),
   },
+  { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
   async ({ path: tracePath }) => {
     const analyzer = new TraceAnalyzer(store, tracePath);
     const result = analyzer.analyze();
@@ -1530,6 +1560,7 @@ server.tool(
     tracePath: z.string().optional().describe('Path to Flowtrace trace directory'),
     focusStep: z.string().optional().describe('Focus on specific execution step'),
   },
+  { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
   async ({ description, tracePath, focusStep }) => {
     // Get trace analysis if tracePath provided
     let traceAnalysis: string = '';
@@ -1598,6 +1629,7 @@ server.tool(
   {
     path: z.string().optional().describe('Project path (defaults to last scan path)'),
   },
+  { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
   async ({ path: scanPath }) => {
     const target = scanPath ? path.resolve(scanPath) : lastScannedPath;
     const analyzer = new EmbeddedAnalyzer(store, target);
@@ -1615,6 +1647,7 @@ server.tool(
   {
     path: z.string().optional().describe('Project path (defaults to last scan path)'),
   },
+  { readOnlyHint: false, idempotentHint: true, destructiveHint: false },
   async ({ path: scanPath }) => {
     const target = scanPath ? path.resolve(scanPath) : lastScannedPath;
     const analyzer = new BuildAnalyzer(target);
@@ -1645,6 +1678,7 @@ server.tool(
   {
     path: z.string().optional().describe('Project path (defaults to last scan path)'),
   },
+  { readOnlyHint: false, idempotentHint: true, destructiveHint: false },
   async ({ path: scanPath }) => {
     const target = scanPath ? path.resolve(scanPath) : lastScannedPath;
     const analyzer = new BuildAnalyzer(target);
@@ -1668,6 +1702,7 @@ server.tool(
   {
     provider: z.enum(['local', 'openai', 'ollama']).optional().default('local').describe('Embedding provider'),
   },
+  { readOnlyHint: false, idempotentHint: true, destructiveHint: false },
   async ({ provider }) => {
     const generator = createEmbeddingGenerator({ provider });
     const vectorStore = new VectorStore(store, generator);
@@ -1698,6 +1733,7 @@ server.tool(
     query: z.string().describe('Natural language query'),
     top: z.number().optional().default(10).describe('Number of results'),
   },
+  { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
   async ({ query, top }) => {
     const generator = createEmbeddingGenerator({ provider: 'local' });
     const vectorStore = new VectorStore(store, generator);
@@ -1744,6 +1780,7 @@ server.tool(
     task: z.string().describe('Task description'),
     dryRun: z.boolean().optional().default(false).describe('Only show plan, don\'t execute'),
   },
+  { readOnlyHint: false, idempotentHint: true, destructiveHint: false },
   async ({ task, dryRun }) => {
     const config = loadConfig(projectPath);
     const aiConfig = getAIConfig(config);
@@ -1793,6 +1830,7 @@ server.tool(
   {
     path: z.string().describe('Absolute path to the project directory'),
   },
+  { readOnlyHint: false, idempotentHint: true, destructiveHint: false },
   async ({ path: newPath }) => {
     const resolved = path.resolve(newPath);
     if (!fs.existsSync(resolved)) {

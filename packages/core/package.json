@@ -36,7 +36,7 @@
   "scripts": {
     "build": "tsc && node -e \"const fs=require('fs'),p=require('path');const s='src/parser/language-packs',d='dist/parser/language-packs';fs.mkdirSync(d,{recursive:true});fs.readdirSync(s).filter(f=>f.endsWith('.wasm')).forEach(f=>fs.copyFileSync(p.join(s,f),p.join(d,f)));\"",
     "dev": "tsc --watch",
-    "test": "vitest run",
+    "test": "vitest run --root ../..",
     "typecheck": "tsc --noEmit",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
   },

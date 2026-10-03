@@ -6,6 +6,8 @@
 
 export { CodeParser } from './parser/index.js';
 export type { ParseResult, ParsedSymbol } from './parser/index.js';
+export { ParserPool } from './parser/parser-pool.js';
+export type { ParseJob, ParseJobOutcome, ParserPoolOptions } from './parser/parser-pool.js';
 
 export { GraphBuilder } from './graph/builder.js';
 export { LayerClassifier } from './graph/layer-classifier.js';
