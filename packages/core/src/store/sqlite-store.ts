@@ -257,6 +257,18 @@ export class SQLiteStore {
     return removed;
   }
 
+  /** Remove a file's symbols/relationships AND its file row (file gone from disk). */
+  deleteFile(filePath: string): number {
+    const removed = this.deleteSymbolsByFile(filePath);
+    this.run('DELETE FROM files WHERE path = ?', [filePath]);
+    return removed;
+  }
+
+  /** All file paths currently in the index. */
+  getFilePaths(): string[] {
+    return this.queryAll('SELECT path FROM files').map((r) => r.path as string);
+  }
+
   // ========================
   // Relationship Operations
   // ========================

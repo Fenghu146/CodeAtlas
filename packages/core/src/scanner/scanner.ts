@@ -68,6 +68,11 @@ export class ProjectScanner {
       forceFull = true;
     }
 
+    // Capture DB stats BEFORE any parsing/streaming flush — the in-memory graph
+    // only holds this run's re-parsed files, so diffing its size against the DB
+    // produced bogus deltas (e.g. -619 symbols on an unchanged incremental run).
+    const oldStats = !forceFull ? this.store.getStats() : null;
+
     // Discover files
     const files = await this.discoverFiles(projectPath, {
       ...options,
@@ -268,9 +273,6 @@ export class ProjectScanner {
       } catch { /* skip */ }
     }
 
-    // Capture old stats for incremental diff
-    const oldStats = !full && !forceFull ? this.store.getStats() : null;
-
     // If we already stream-flushed some data, skip the files that were already saved
     const alreadySavedFiles = new Set<string>();
     if (parseResultsSinceFlush === 0 && options.full) {
@@ -294,11 +296,25 @@ export class ProjectScanner {
     }
     this.store.saveGraph(graph);
 
-    // Output incremental diff for repeat scans
+    // Finish the carriage-return progress line before printing summaries.
+    process.stdout.write('\n');
+
+    // Files deleted from disk leave stale rows behind — drop them (both modes).
+    const discovered = new Set(files.map((fp) => path.relative(projectPath, fp)));
+    let staleFilesRemoved = 0;
+    for (const p of this.store.getFilePaths()) {
+      if (!discovered.has(p)) {
+        this.store.deleteFile(p);
+        staleFilesRemoved++;
+      }
+    }
+
+    // Output incremental diff for repeat scans (diff the DB itself).
     if (oldStats) {
-      const symDiff = graph.symbols.size - oldStats.symbols;
-      const relDiff = graph.relationships.length - oldStats.relationships;
-      const fileDiff = graph.files.size - oldStats.files;
+      const newStats = this.store.getStats();
+      const symDiff = newStats.symbols - oldStats.symbols;
+      const relDiff = newStats.relationships - oldStats.relationships;
+      const fileDiff = newStats.files - oldStats.files;
       if (symDiff !== 0 || relDiff !== 0 || fileDiff !== 0) {
         const parts: string[] = ['📊'];
         if (symDiff > 0) parts.push(`+${symDiff} symbols`);
@@ -307,8 +323,11 @@ export class ProjectScanner {
         else if (relDiff < 0) parts.push(`${relDiff} relationships`);
         if (fileDiff > 0) parts.push(`+${fileDiff} files`);
         if (fileDiff < 0) parts.push(`${fileDiff} files`);
-        console.warn(`   ${parts.join(', ')}`);
+        console.warn(`   ${parts[0]} ${parts.slice(1).join(', ')}`);
       }
+    }
+    if (staleFilesRemoved > 0) {
+      console.warn(`   🗑️  Stale files removed: ${staleFilesRemoved}`);
     }
 
     // Save scan metadata for next run
