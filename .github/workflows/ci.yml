@@ -32,11 +32,13 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Typecheck
-        run: pnpm typecheck
-
+      # Build before typecheck: cross-package typechecking (e.g. the vscode
+      # package) needs @codeatlas/core's generated .d.ts files.
       - name: Build
         run: pnpm build
+
+      - name: Typecheck
+        run: pnpm typecheck
 
       # Runs from the root so the workspace vitest.config.ts collects every
       # package's tests — per-package `vitest run` has no config of its own.
