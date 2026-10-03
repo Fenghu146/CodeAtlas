@@ -36,6 +36,7 @@
     "clean": "pnpm -r run --parallel clean"
   },
   "devDependencies": {
+    "esbuild": "^0.28.2",
     "vitest": "^4.1.8"
   },
   "dependencies": {

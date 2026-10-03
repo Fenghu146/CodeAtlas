@@ -44,3 +44,9 @@ npm-shrinkwrap.json
 # CodeAtlas diff baselines (generated)
 baseline.json
 *.baseline.json
+
+# VS Code extension package artifact (built by scripts/build-vscode.mjs)
+*.vsix
+
+# Working notes kept local (not part of the release)
+docs/NEXT-ROUND-PLAN.md
