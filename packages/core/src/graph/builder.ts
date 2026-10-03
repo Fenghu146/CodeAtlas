@@ -63,6 +63,7 @@ export class GraphBuilder {
           docComment: parsed.docComment,
           exported: parsed.exported,
           complexity: parsed.complexity,
+          parentName: parsed.parentName,
         };
         symbols.set(id, symbol);
       }

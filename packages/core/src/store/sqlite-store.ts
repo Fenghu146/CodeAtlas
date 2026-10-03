@@ -200,7 +200,7 @@ export class SQLiteStore {
       symbol.aiSummary ?? null,
       symbol.complexity ?? null,
       symbol.exported ? 1 : 0,
-      symbol.metadata ? JSON.stringify(symbol.metadata) : null,
+      this.symbolMetadata(symbol),
     ]);
   }
 
@@ -482,8 +482,14 @@ export class SQLiteStore {
       symbol.sourceCode ?? null, symbol.language, symbol.layer,
       symbol.docComment ?? null, symbol.aiSummary ?? null,
       symbol.complexity ?? null, symbol.exported ? 1 : 0,
-      symbol.metadata ? JSON.stringify(symbol.metadata) : null,
+      this.symbolMetadata(symbol),
     ]);
+  }
+
+  /** Serialize symbol metadata, folding parentName into the JSON payload. */
+  private symbolMetadata(symbol: Symbol): string | null {
+    if (!symbol.metadata && !symbol.parentName) return null;
+    return JSON.stringify({ ...symbol.metadata, parentName: symbol.parentName });
   }
 
   /** Insert a single relationship (duplicates ignored) */
@@ -619,6 +625,8 @@ export class SQLiteStore {
   }
 
   private rowToSymbol(row: any): Symbol {
+    const metadata: Record<string, unknown> = row.metadata ? JSON.parse(row.metadata) : {};
+    const { parentName, ...restMetadata } = metadata;
     return {
       id: row.id,
       name: row.name,
@@ -635,7 +643,8 @@ export class SQLiteStore {
       aiSummary: row.ai_summary,
       complexity: row.complexity,
       exported: !!row.exported,
-      metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
+      metadata: Object.keys(restMetadata).length ? restMetadata : undefined,
+      parentName: typeof parentName === 'string' ? parentName : undefined,
     };
   }
 }

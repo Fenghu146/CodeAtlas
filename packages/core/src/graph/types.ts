@@ -49,6 +49,8 @@ export interface Symbol {
   aiSummary?: string;
   complexity?: number;
   exported: boolean;
+  /** Name of the enclosing symbol (class, namespace, ...) when known. */
+  parentName?: string;
   metadata?: Record<string, unknown>;
 }
 

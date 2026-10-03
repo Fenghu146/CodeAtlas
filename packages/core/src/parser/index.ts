@@ -69,14 +69,18 @@ const EXTENSION_MAP: Record<string, string> = {
   '.cs': 'c_sharp',
   '.cpp': 'cpp',
   '.c': 'c',
-  '.h': 'c',
+  // Header extensions are ambiguous between C and C++; the C++ grammar is a
+  // superset of C and the ecosystem convention (clang/GitHub Linguist) treats
+  // headers as C++ when ambiguous. Using the C grammar on C++ headers parses
+  // `class X {}` as a function definition and destroys namespaces entirely.
+  '.h': 'cpp',
   '.hpp': 'cpp',
   '.cc': 'cpp',
   '.cxx': 'cpp',
-  '.hh': 'c',
+  '.hh': 'cpp',
   '.hxx': 'cpp',
   '.c++': 'cpp',
-  '.h++': 'c',
+  '.h++': 'cpp',
 };
 
 export function detectLanguage(filePath: string): string | null {
@@ -257,60 +261,42 @@ export class CodeParser {
       'lexical_declaration',  // const/let
       'variable_declaration', // var
       'assignment',           // Python: X = ...
-      // C/C++ specifics - use function_definition instead of function_declarator
+      // C/C++ specifics (names and kinds are resolved through the declarator
+      // chain — see nodeToSymbolC)
       'function_definition',
       'class_specifier',      // C++ class
       'struct_specifier',     // C struct/class
-      'template_function',
-      'template_class',
+      'union_specifier',      // C/C++ union
+      'enum_specifier',       // C/C++ enum
+      'namespace_definition', // C++ namespace
+      'alias_declaration',    // C++ using X = Y
+      'field_declaration',    // class/struct members and method declarations
       'preproc_def',          // #define
       'preproc_function_def', // #define FUNC()
       // Embedded C specifics
       'type_definition',      // typedef
-      'declaration',          // Variable declarations
-      'linked_declaration',   // static/extern/volatile declarations
+      'declaration',          // file-scope declarations (locals are skipped)
     ]);
     return common;
   }
 
   /** Convert a syntax node to a ParsedSymbol */
   private nodeToSymbol(node: SyntaxNode, sourceCode: string, lang?: string): ParsedSymbol | null {
+    // C/C++ use declarator-based extraction (names come from the declarator
+    // chain, not from the type) — see nodeToSymbolC.
+    if (lang === 'c' || lang === 'cpp') {
+      return this.nodeToSymbolC(node, sourceCode, lang);
+    }
+
     let kind = this.mapNodeKind(node.type);
     if (!kind) return null;
-
-    // C/C++: declaration nodes containing function_declarator are actually function declarations
-    if ((lang === 'c' || lang === 'cpp') && kind === 'variable' && node.type === 'declaration') {
-      if (node.children.some(c => c.type === 'function_declarator' || c.type === 'pointer_declarator')) {
-        kind = 'function';
-      }
-    }
 
     // Extract name - varies by language and node type
     let nameNode: SyntaxNode | null = node.childForFieldName('name') ?? null;
 
-    // For C/C++ function_definition, the name is inside function_declarator
-    if (!nameNode && node.type === 'function_definition') {
-      const declarator = node.children.find(c => c.type === 'function_declarator');
-      if (declarator) {
-        nameNode = declarator.children.find(c => c.type === 'identifier') ?? null;
-      }
-    }
-
     // Fallback: find identifier or type_identifier in children
     if (!nameNode) {
       nameNode = node.children.find(c => c.type === 'identifier' || c.type === 'type_identifier') ?? null;
-    }
-
-    // C/C++: function_declarator inside declaration node (e.g., int foo(void) in header)
-    if (!nameNode && (lang === 'c' || lang === 'cpp')) {
-      const declarator = node.children.find(c =>
-        c.type === 'function_declarator' || c.type === 'pointer_declarator'
-      );
-      if (declarator) {
-        nameNode = declarator.children.find(c =>
-          c.type === 'identifier' || c.type === 'type_identifier'
-        ) ?? null;
-      }
     }
 
     if (!nameNode) return null;
@@ -358,6 +344,188 @@ export class CodeParser {
     };
   }
 
+  /**
+   * C/C++ symbol extraction.
+   *
+   * C-family declarations name their entity through the declarator chain
+   * (`Type* name(...)`, `Type name = ...`), so a naive "first identifier in
+   * children" rule returns the TYPE instead of the name (`string name;` →
+   * "string"). This path resolves the declarator chain, classifies members as
+   * properties and methods (with their class as parent), and skips
+   * function-local declarations, which are implementation detail.
+   */
+  private nodeToSymbolC(node: SyntaxNode, sourceCode: string, lang: string): ParsedSymbol | null {
+    const decl = this.resolveCDeclarator(node);
+
+    let kind: string | null;
+    switch (node.type) {
+      case 'namespace_definition':
+        kind = 'namespace';
+        break;
+      case 'class_specifier':
+      case 'struct_specifier':
+      case 'union_specifier':
+        kind = 'class';
+        break;
+      case 'enum_specifier':
+        kind = 'enum';
+        break;
+      case 'alias_declaration':
+      case 'type_definition':
+        kind = 'type';
+        break;
+      case 'preproc_def':
+        kind = 'constant';
+        break;
+      case 'preproc_function_def':
+        kind = 'function';
+        break;
+      case 'field_declaration':
+        kind = decl?.isFunction ? 'method' : 'property';
+        break;
+      case 'function_definition': {
+        // In-class definitions are methods; out-of-class definitions with a
+        // qualified name (`void Manager::load() {}`) are methods too.
+        kind = this.findCClassParent(node) || decl?.qualifierNode ? 'method' : 'function';
+        break;
+      }
+      case 'declaration': {
+        // Function-local declarations are implementation detail; keeping them
+        // floods the symbol table with type-named noise.
+        if (this.isLocalToFunction(node)) return null;
+        if (decl?.isFunction) {
+          kind = this.findCClassParent(node) || decl.qualifierNode ? 'method' : 'function';
+        } else {
+          kind = 'variable';
+        }
+        break;
+      }
+      default:
+        return null;
+    }
+
+    // Named nodes (class/enum/namespace/alias/#define) carry a `name` field;
+    // declarator nodes resolve it through the declarator chain.
+    let nameNode: SyntaxNode | null = node.childForFieldName('name');
+    if (!nameNode) nameNode = decl?.nameNode ?? null;
+    if (!nameNode) return null;
+
+    const name = nameNode.text;
+    const sourceSlice = sourceCode.slice(node.startIndex, node.endIndex);
+    const docComment = this.extractDocComment(node, sourceCode);
+    const exported = this.isExported(node, sourceCode, lang);
+
+    // Cyclomatic complexity: count decision points in the function body
+    const complexity = (kind === 'function' || kind === 'method')
+      ? this.calculateComplexity(sourceSlice, lang)
+      : undefined;
+
+    // Parent: enclosing class/struct, or the qualifier of out-of-class
+    // definitions (`void Manager::load() {}` → Manager).
+    const classParent = this.findCClassParent(node);
+    let parentName: string | undefined;
+    if (classParent) {
+      parentName = classParent.childForFieldName('name')?.text;
+    } else if (decl?.qualifierNode) {
+      parentName = decl.qualifierNode.text;
+    }
+
+    return {
+      name,
+      kind,
+      startLine: node.startPosition.row + 1,  // 1-based
+      endLine: node.endPosition.row + 1,
+      startCol: node.startPosition.column,
+      endCol: node.endPosition.column,
+      sourceCode: sourceSlice,
+      docComment,
+      exported,
+      parentName,
+      complexity,
+    };
+  }
+
+  /** Declarator wrapper node types in the C-family grammars. */
+  private static readonly C_DECLARATOR_WRAPPERS = new Set([
+    'function_declarator',
+    'pointer_declarator',
+    'reference_declarator',
+    'array_declarator',
+    'init_declarator',
+    'parenthesized_declarator',
+    'attributed_declarator',
+  ]);
+
+  /**
+   * Resolve the declared entity of a C-family node through its declarator
+   * chain. Returns the node carrying the name, whether the entity is a
+   * function (the chain passes through a function_declarator), and the
+   * qualifier of qualified names (`Manager::instance` → "Manager").
+   */
+  private resolveCDeclarator(node: SyntaxNode): {
+    nameNode: SyntaxNode | null;
+    isFunction: boolean;
+    qualifierNode: SyntaxNode | null;
+  } | null {
+    let current =
+      node.childForFieldName('declarator') ??
+      node.children.find((c) => CodeParser.C_DECLARATOR_WRAPPERS.has(c.type)) ??
+      null;
+    if (!current) return null;
+
+    let isFunction = false;
+    for (let hops = 0; current && hops < 12; hops++) {
+      if (current.type === 'function_declarator') isFunction = true;
+
+      switch (current.type) {
+        case 'identifier':
+        case 'field_identifier':
+        case 'type_identifier':
+        case 'operator_name':
+        case 'destructor_name':
+          return { nameNode: current, isFunction, qualifierNode: null };
+        case 'qualified_identifier':
+          return {
+            nameNode: current.childForFieldName('name'),
+            isFunction,
+            qualifierNode: current.childForFieldName('scope') ?? current.namedChildren[0] ?? null,
+          };
+        default: {
+          if (!CodeParser.C_DECLARATOR_WRAPPERS.has(current.type)) return null;
+          current = current.childForFieldName('declarator') ?? current.namedChildren[0] ?? null;
+        }
+      }
+    }
+    return null;
+  }
+
+  /** Nearest enclosing class/struct/union specifier, if any. */
+  private findCClassParent(node: SyntaxNode): SyntaxNode | null {
+    let parent = node.parent;
+    while (parent && parent.type !== 'translation_unit') {
+      if (
+        parent.type === 'class_specifier' ||
+        parent.type === 'struct_specifier' ||
+        parent.type === 'union_specifier'
+      ) {
+        return parent;
+      }
+      parent = parent.parent;
+    }
+    return null;
+  }
+
+  /** True when the node sits inside a function body (compound_statement). */
+  private isLocalToFunction(node: SyntaxNode): boolean {
+    let parent = node.parent;
+    while (parent) {
+      if (parent.type === 'compound_statement') return true;
+      if (parent.type === 'translation_unit') return false;
+      parent = parent.parent;
+    }
+    return false;
+  }
+
   /** Map AST node type to our SymbolKind */
   private mapNodeKind(nodeType: string): string | null {
     const map: Record<string, string> = {
@@ -375,15 +543,18 @@ export class CodeParser {
       'variable_declaration': 'variable',  // var
       'assignment': 'variable',            // Python: X = ...
       // C/C++ specifics
-      'function_declarator': 'function',
-      'template_function': 'function',
-      'template_class': 'class',
+      'class_specifier': 'class',
+      'struct_specifier': 'class',         // struct (treat as class)
+      'union_specifier': 'class',          // union (aggregate like struct)
+      'enum_specifier': 'enum',
+      'namespace_definition': 'namespace',
+      'alias_declaration': 'type',         // using X = Y
       'preproc_def': 'constant',           // #define
       'preproc_function_def': 'function',  // #define FUNC()
       // Embedded C specifics
-      'type_definition': 'type',           // typedef
-      'struct_specifier': 'class',         // struct (treat as class)
-      'declaration': 'variable',           // Variable declarations
+      'type_definition': 'type',           // typedef (name lives in the declarator)
+      'declaration': 'variable',           // refined to function/method via declarator
+      'field_declaration': 'property',     // refined to method for method declarations
     };
     return map[nodeType] ?? null;
   }
