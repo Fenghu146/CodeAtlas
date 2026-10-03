@@ -27,6 +27,8 @@ interface Fixture {
   calls: Array<[string, string]>;
   /** pairs that must NOT appear (regressions: type names, locals) */
   noCalls: Array<[string, string]>;
+  /** symbol names that must NOT be extracted (locals, reassignments) */
+  absent?: Array<{ name: string }>;
 }
 
 const FIXTURES: Fixture[] = [
@@ -49,6 +51,8 @@ export class UserService {
 export function helper(x: number): number {
   return x * 2;
 }
+
+export const LIMIT = 10;
 `,
     symbols: [
       { kind: 'class', name: 'UserService' },
@@ -56,6 +60,7 @@ export function helper(x: number): number {
       { kind: 'method', name: 'constructor', parent: 'UserService' },
       { kind: 'method', name: 'create', parent: 'UserService' },
       { kind: 'function', name: 'helper' },
+      { kind: 'variable', name: 'LIMIT' },
     ],
     calls: [['create', 'trim']],
     noCalls: [['create', 'string'], ['create', 'name']],
@@ -65,11 +70,14 @@ export function helper(x: number): number {
     file: 'models/user.py',
     code: `
 class User:
+    role = 'member'
+
     def __init__(self, name: str):
         self.name = name
 
     def rename(self, new_name: str) -> None:
         self.name = new_name
+        scratch = new_name
 
 def format_name(raw: str) -> str:
     return raw.strip()
@@ -80,9 +88,10 @@ class UserService:
 `,
     symbols: [
       { kind: 'class', name: 'User' },
+      { kind: 'property', name: 'role', parent: 'User' },
       { kind: 'method', name: '__init__', parent: 'User' },
-      // `self.name = ...` is an assignment — extracted as a variable, not a field.
-      { kind: 'variable', name: 'name', parent: 'User' },
+      // `self.name = ...` assigns the instance attribute — that IS the property.
+      { kind: 'property', name: 'name', parent: 'User' },
       { kind: 'method', name: 'rename', parent: 'User' },
       { kind: 'function', name: 'format_name' },
       { kind: 'class', name: 'UserService' },
@@ -91,6 +100,8 @@ class UserService:
     calls: [['format_name', 'strip'], ['create', 'format_name']],
     // `name`/`new_name` are local values, `str`/`None` are types.
     noCalls: [['create', 'name'], ['rename', 'str'], ['__init__', 'str']],
+    // `scratch` is a function-local binding — never a symbol.
+    absent: [{ name: 'scratch' }],
   },
   {
     language: 'java',
@@ -201,6 +212,10 @@ describe.each(FIXTURES.map((f) => [f.language, f] as const))('extracts %s', (_la
     for (const expected of fixture.symbols) {
       const wanted = `${expected.kind} ${expected.name}${expected.parent ? `@${expected.parent}` : ''}`;
       expect(actual, `${fixture.file}: expected ${wanted} in [${actual.join(', ')}]`).toContain(wanted);
+    }
+    for (const a of fixture.absent ?? []) {
+      const names = result.symbols.map((s) => s.name);
+      expect(names, `${fixture.file}: '${a.name}' must not become a symbol`).not.toContain(a.name);
     }
   });
 

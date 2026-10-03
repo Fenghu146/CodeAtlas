@@ -11,6 +11,25 @@ import { fileURLToPath } from 'url';
 // Re-export type for use in other modules
 type SyntaxNode = Parser.SyntaxNode;
 
+// Ancestor scopes that introduce names for binding nodes (assignments/decls).
+const CLASS_SCOPE_TYPES = new Set([
+  'class_definition', 'class_declaration', 'abstract_class_declaration',
+  'class_specifier', 'struct_specifier', 'impl_item', 'class',
+]);
+const FUNCTION_SCOPE_TYPES = new Set([
+  'function_definition', 'function_declaration', 'method_definition', 'method',
+  'singleton_method', 'arrow_function', 'lambda', 'generator_function_declaration',
+  'function_item', 'constructor_declaration',
+]);
+// Value nodes that make `const f = ...` a function symbol, not a variable.
+const FUNCTION_VALUE_TYPES = new Set([
+  'arrow_function', 'function', 'function_expression',
+  'generator_function', 'lambda',
+]);
+const LOOP_VARIABLE_PARENTS = new Set([
+  'for_statement', 'for_in_statement', 'while_statement',
+]);
+
 export interface ParsedSymbol {
   name: string;
   kind: string;
@@ -179,7 +198,17 @@ export class CodeParser {
   private extractSymbols(node: SyntaxNode, sourceCode: string, lang: string): ParsedSymbol[] {
     const symbols: ParsedSymbol[] = [];
     this.walkForSymbols(node, sourceCode, symbols, lang);
-    return symbols;
+
+    // `self.attr = v` in every method still declares one property — keep the
+    // first (earliest) occurrence per class attribute name.
+    const seenProperties = new Set<string>();
+    return symbols.filter((s) => {
+      if (s.kind !== 'property') return true;
+      const key = `${s.parentName ?? ''}::${s.name}`;
+      if (seenProperties.has(key)) return false;
+      seenProperties.add(key);
+      return true;
+    });
   }
 
   /** Walk the AST and collect symbol nodes */
@@ -260,7 +289,8 @@ export class CodeParser {
       // Variables/Constants (top-level assignments)
       'lexical_declaration',  // const/let
       'variable_declaration', // var
-      'assignment',           // Python: X = ...
+      'assignment',           // Python/Ruby: X = ... (declaration-by-assignment)
+      'assignment_expression', // JS/TS/Java: only `this.x = ...` property init
       // C/C++ specifics (names and kinds are resolved through the declarator
       // chain — see nodeToSymbolC)
       'function_definition',
@@ -310,12 +340,31 @@ export class CodeParser {
     // Extract name - varies by language and node type
     let nameNode: SyntaxNode | null = node.childForFieldName('name') ?? null;
 
-    // Python assignments name their target, not the value: `self.name = raw`
+    // Assignments name their target, not the value: `self.name = raw`
     // is the attribute `name` (unwrap `obj.attr` to `attr`).
-    if (!nameNode && node.type === 'assignment') {
+    if (!nameNode && (node.type === 'assignment' || node.type === 'assignment_expression')) {
       const target = node.childForFieldName('left') ?? node.childForFieldName('target');
       if (target) {
-        nameNode = target.childForFieldName('attribute') ?? target.childForFieldName('name') ?? target;
+        nameNode = target.childForFieldName('attribute')   // python `self.name`
+          ?? target.childForFieldName('property')          // js/ts `this.name`
+          ?? target.childForFieldName('field')             // java `this.name`
+          ?? target.childForFieldName('name')
+          ?? target;
+      }
+    }
+
+    // JS/TS const/let/var: the binding lives in the `variable_declarator`
+    // child (`const top = 1` — the declaration node has no name field).
+    if (!nameNode && (node.type === 'lexical_declaration' || node.type === 'variable_declaration')) {
+      const decl = node.children.find(c => c.type === 'variable_declarator');
+      if (decl) {
+        const binding = decl.childForFieldName('name') ?? decl.namedChild(0);
+        // Destructuring patterns have no single name; skip rather than guess.
+        if (binding && (binding.type === 'identifier' || binding.type === 'type_identifier')) {
+          nameNode = binding;
+        } else {
+          return null;
+        }
       }
     }
 
@@ -341,6 +390,55 @@ export class CodeParser {
 
     if (!nameNode) return null;
 
+    // Scope-aware binding rules for assignment-like nodes: only module scope
+    // and class scope introduce names; bindings inside functions are locals
+    // and never symbols. Attribute targets (`self.x`/`this.x`/`@x`) declare
+    // the object's property; other attribute/subscript targets are plain
+    // reassignments of existing objects and never declare names.
+    if (
+      node.type === 'assignment' ||
+      node.type === 'assignment_expression' ||
+      node.type === 'lexical_declaration' ||
+      node.type === 'variable_declaration'
+    ) {
+      const target = node.type === 'assignment' || node.type === 'assignment_expression'
+        ? (node.childForFieldName('left') ?? node.childForFieldName('target') ?? node)
+        : nameNode;
+      const objectNode = target.childForFieldName('object');
+      const isPropertyTarget =
+        target.type === 'instance_variable' || // ruby `@x = 1`
+        (objectNode !== null &&
+          (objectNode.type === 'this' ||
+            sourceCode.slice(objectNode.startIndex, objectNode.endIndex) === 'self'));
+      const isPlainName = target.type === 'identifier' || target.type === 'type_identifier';
+
+      if (isPropertyTarget) {
+        // Property declarations attach to the enclosing class.
+        let scope: SyntaxNode | null = node.parent;
+        while (scope && !CLASS_SCOPE_TYPES.has(scope.type)) scope = scope.parent;
+        if (!scope) return null;
+        kind = 'property';
+      } else if (!isPlainName) {
+        return null; // `obj.field = ...` / `a[0] = ...` — not declarations
+      } else if (node.type === 'assignment_expression') {
+        return null; // js/ts/java `x = ...` reassigns; the declaration is the symbol
+      } else if (node.parent && LOOP_VARIABLE_PARENTS.has(node.parent.type)) {
+        return null; // `for (let i = ...)` loop variable
+      } else {
+        let scope: SyntaxNode | null = node.parent;
+        while (scope && scope.type !== 'program') {
+          if (FUNCTION_SCOPE_TYPES.has(scope.type)) return null; // local binding
+          if (CLASS_SCOPE_TYPES.has(scope.type)) { kind = 'property'; break; }
+          scope = scope.parent;
+        }
+        if (kind !== 'property') {
+          // `const helper = () => {}` reads as a function, not a variable.
+          const value = node.childForFieldName('value') ?? node.childForFieldName('right');
+          if (value && FUNCTION_VALUE_TYPES.has(value.type)) kind = 'function';
+        }
+      }
+    }
+
     const name = sourceCode.slice(nameNode.startIndex, nameNode.endIndex);
     const sourceSlice = sourceCode.slice(node.startIndex, node.endIndex);
     const docComment = this.extractDocComment(node, sourceCode);
@@ -360,6 +458,8 @@ export class CodeParser {
         const isTypeBody =
           parent.type === 'class_definition' ||
           parent.type === 'class_declaration' ||
+          parent.type === 'abstract_class_declaration' ||
+          parent.type === 'class' ||
           parent.type === 'class_specifier' ||
           parent.type === 'struct_specifier' ||
           parent.type === 'record_declaration' ||
@@ -408,6 +508,9 @@ export class CodeParser {
    * function-local declarations, which are implementation detail.
    */
   private nodeToSymbolC(node: SyntaxNode, sourceCode: string, lang: string): ParsedSymbol | null {
+    // Reassignments (`x = 5`, `this->x = 5`) never declare names in C-family;
+    // fields come from declarations inside the class body.
+    if (node.type === 'assignment_expression') return null;
     const decl = this.resolveCDeclarator(node);
 
     let kind: string | null;

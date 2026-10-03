@@ -10,7 +10,7 @@
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { SQLiteStore } from './store/sqlite-store.js';
-import { ParserPool, resolveChildScript, type ParseJob } from './parser/parser-pool.js';
+import { ParserPool, resolveChildScript, type ParseJob, type ParseJobOutcome } from './parser/parser-pool.js';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -35,7 +35,15 @@ function medianParseMs(outcomes: ParseJobOutcome[]): number {
 }
 
 function makePool(maxFilesPerWorker = 25): ParserPool {
-  return new ParserPool({ maxWorkers: 1, maxFilesPerWorker });
+  return new ParserPool({ maxWorkers: 1, maxFilesPerWorker, jobTimeoutMs: 120_000 });
+}
+
+/** Every parse job must succeed — report failing jobs instead of a bare false. */
+function expectAllOk(outcomes: ParseJobOutcome[], label: string): void {
+  const failures = outcomes
+    .filter((o): o is Extract<ParseJobOutcome, { ok: false }> => !o.ok)
+    .map((o) => `${o.filePath}: ${o.error.message}`);
+  expect(failures, `${label}: parse jobs failed`).toEqual([]);
 }
 
 describe('Performance Benchmarks', () => {
@@ -83,7 +91,7 @@ describe('Performance Benchmarks', () => {
         const outcomes = await pool.parseMany(jobs);
         const end = performance.now();
         const parseMs = medianParseMs(outcomes);
-        expect(outcomes.every((o) => o.ok)).toBe(true);
+    expectAllOk(outcomes, 'Parser (small files)');
         console.log(`Parser (small file, via pool): ${parseMs.toFixed(2)}ms median parse`);
         expect(parseMs).toBeLessThan(100);
       } finally {
@@ -109,7 +117,7 @@ describe('Performance Benchmarks', () => {
         const outcomes = await pool.parseMany(jobs);
         const end = performance.now();
         const parseMs = medianParseMs(outcomes);
-        expect(outcomes.every((o) => o.ok)).toBe(true);
+    expectAllOk(outcomes, 'Parser (medium files)');
         console.log(`Parser (medium file, 100 funcs, via pool): ${parseMs.toFixed(2)}ms median parse`);
         expect(parseMs).toBeLessThan(500);
       } finally {
@@ -135,7 +143,7 @@ describe('Performance Benchmarks', () => {
         const outcomes = await pool.parseMany(jobs);
         const end = performance.now();
         const parseMs = medianParseMs(outcomes);
-        expect(outcomes.every((o) => o.ok)).toBe(true);
+    expectAllOk(outcomes, 'Parser (large files)');
         console.log(`Parser (large file, 1000 funcs, via pool): ${parseMs.toFixed(2)}ms median parse`);
         expect(parseMs).toBeLessThan(2000);
       } finally {
