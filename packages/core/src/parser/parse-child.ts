@@ -77,8 +77,9 @@ async function handle(request: ParseRequest): Promise<void> {
     if (language && !parser.hasLanguage(language)) {
       await parser.loadLanguage(language);
     }
+    const startedAt = performance.now();
     const result = parser.parse(request.content, request.filePath);
-    send({ kind: 'result', id: request.id, ok: true, result, rssMb: rssMb() });
+    send({ kind: 'result', id: request.id, ok: true, result, rssMb: rssMb(), parseMs: performance.now() - startedAt });
   } catch (err) {
     send({
       kind: 'result',

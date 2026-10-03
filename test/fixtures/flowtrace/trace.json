@@ -1,0 +1,30 @@
+{
+  "id": "sample-flow",
+  "title": "Sample Flow",
+  "description": "A three-step sample flow used by CodeAtlas trace tests.",
+  "version": "1.0.0",
+  "steps": {
+    "collect": {
+      "name": "Collect inputs",
+      "does": "Gather raw input records",
+      "from_steps": [],
+      "assets": ["raw.json"]
+    },
+    "transform": {
+      "name": "Transform records",
+      "does": "Normalize and enrich records",
+      "from_steps": ["collect"],
+      "assets": ["clean.json"]
+    },
+    "report": {
+      "name": "Build report",
+      "does": "Summarize final results",
+      "from_steps": ["transform"],
+      "assets": ["report.md"]
+    }
+  },
+  "deliverable": {
+    "description": "Final summary report",
+    "assets": ["report.md"]
+  }
+}

@@ -32,6 +32,8 @@ export type ParseMessage =
       result: ParseResult;
       /** Child RSS in MB after the job — used for recycle decisions. */
       rssMb?: number;
+      /** Wall time the child spent parsing, excluding dispatch and IPC. */
+      parseMs?: number;
     }
   /** A finished job that could not be parsed. */
   | {

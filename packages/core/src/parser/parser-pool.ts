@@ -55,6 +55,8 @@ export interface ParseJobOk {
   ok: true;
   filePath: string;
   result: ParseResult;
+  /** Time the executing unit spent parsing (excludes dispatch and IPC). */
+  parseMs?: number;
 }
 
 export interface ParseJobError {
@@ -69,7 +71,7 @@ export type ParseJobOutcome = ParseJobOk | ParseJobError;
 export interface ParseExecutor {
   /** Resolves once the executor can accept jobs. */
   ready(): Promise<void>;
-  parse(content: string, filePath: string): Promise<ParseResult>;
+  parse(content: string, filePath: string): Promise<ParseExecution>;
   /** RSS of the executing unit in MB, or null when unknown (in-process). */
   rssMb(): number | null;
   /** Files parsed by this executor so far. */
@@ -78,6 +80,13 @@ export interface ParseExecutor {
 }
 
 export type RecycleReason = 'files' | 'rss' | 'timeout';
+
+/** What an executor returns for one job. */
+export interface ParseExecution {
+  result: ParseResult;
+  /** Wall time spent parsing inside the executing unit, when measured. */
+  parseMs?: number;
+}
 
 export interface ParserPoolOptions {
   /** Max concurrent parse workers. Default: min(4, cpus/2), further capped by
@@ -187,9 +196,9 @@ class ChildParseExecutor implements ParseExecutor {
     return this.readyPromise;
   }
 
-  parse(content: string, filePath: string): Promise<ParseResult> {
+  parse(content: string, filePath: string): Promise<ParseExecution> {
     const id = this.nextId++;
-    return new Promise<ParseResult>((resolve, reject) => {
+    return new Promise<ParseExecution>((resolve, reject) => {
       this.pending.set(id, (message) => {
         if (message.kind !== 'result') {
           reject(new Error('parse worker sent a non-result message for a job'));
@@ -197,7 +206,7 @@ class ChildParseExecutor implements ParseExecutor {
         }
         if (message.ok) {
           this.jobsDone++;
-          resolve(message.result);
+          resolve({ result: message.result, parseMs: message.parseMs });
         } else {
           reject(new Error(message.error.message));
         }
@@ -258,7 +267,7 @@ class InProcessExecutor implements ParseExecutor {
     await this.parser();
   }
 
-  async parse(content: string, filePath: string): Promise<ParseResult> {
+  async parse(content: string, filePath: string): Promise<ParseExecution> {
     const parser = await this.parser();
     const { detectLanguage } = await import('./index.js');
     const language = detectLanguage(filePath);
@@ -266,7 +275,9 @@ class InProcessExecutor implements ParseExecutor {
       await parser.loadLanguage(language);
     }
     this.jobsDone++;
-    return parser.parse(content, filePath);
+    const startedAt = performance.now();
+    const result = parser.parse(content, filePath);
+    return { result, parseMs: performance.now() - startedAt };
   }
 
   rssMb(): number | null {
@@ -407,8 +418,8 @@ export class ParserPool {
     });
 
     try {
-      const result = await Promise.race([executor.parse(job.content, job.filePath), timeout]);
-      return { ok: true, filePath: job.filePath, result };
+      const execution = await Promise.race([executor.parse(job.content, job.filePath), timeout]);
+      return { ok: true, filePath: job.filePath, result: execution.result, parseMs: execution.parseMs };
     } catch (err) {
       if (timedOut) {
         this.onEvent({ type: 'recycle', reason: 'timeout', jobsDone: executor.jobsDone });

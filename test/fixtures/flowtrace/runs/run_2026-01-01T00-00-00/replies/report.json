@@ -1,0 +1,21 @@
+{
+  "headline": "Two of three steps completed",
+  "status": "error",
+  "checkpoint": {
+    "step_id": "report",
+    "step_name": "Build report"
+  },
+  "support": [
+    "collect produced raw.json",
+    "transform produced clean.json"
+  ],
+  "findings": [
+    {
+      "title": "Report template missing",
+      "detail": "The report step failed because report.md.tftpl is absent."
+    }
+  ],
+  "suggestions": [
+    "Add report.md.tftpl to the template directory"
+  ]
+}

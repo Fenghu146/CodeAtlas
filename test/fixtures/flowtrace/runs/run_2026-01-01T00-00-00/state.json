@@ -1,0 +1,16 @@
+{
+  "steps": {
+    "collect": {
+      "status": { "kind": "done", "message": "collected 3 records" },
+      "assets": ["raw.json"]
+    },
+    "transform": {
+      "status": { "kind": "done" },
+      "assets": ["clean.json"]
+    },
+    "report": {
+      "status": { "kind": "error", "message": "template report.md.tftpl not found" },
+      "assets": []
+    }
+  }
+}

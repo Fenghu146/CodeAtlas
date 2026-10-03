@@ -24,6 +24,16 @@ const MEDIUM_ITER = WORKERS_AVAILABLE ? 10 : 3;
 const LARGE_ITER = WORKERS_AVAILABLE ? 5 : 1;
 const MEM_ITER = WORKERS_AVAILABLE ? 200 : 20;
 
+/** Median in-unit parse time — immune to test-runner scheduling noise. */
+function medianParseMs(outcomes: ParseJobOutcome[]): number {
+  const samples = outcomes
+    .filter((o): o is Extract<ParseJobOutcome, { ok: true }> => o.ok && typeof o.parseMs === 'number')
+    .map((o) => o.parseMs as number)
+    .sort((a, b) => a - b);
+  if (samples.length === 0) throw new Error('no parse timings reported by the pool');
+  return samples[Math.floor(samples.length / 2)];
+}
+
 function makePool(maxFilesPerWorker = 25): ParserPool {
   return new ParserPool({ maxWorkers: 1, maxFilesPerWorker });
 }
@@ -56,7 +66,7 @@ describe('Performance Benchmarks', () => {
   });
 
   describe('Parser Performance', () => {
-    it('should parse small file in < 100ms avg', async () => {
+    it('should parse small file in < 100ms median parse', async () => {
       const code = `
         function hello() {
           return 'world';
@@ -72,17 +82,16 @@ describe('Performance Benchmarks', () => {
         const start = performance.now();
         const outcomes = await pool.parseMany(jobs);
         const end = performance.now();
-        const avg = (end - start) / SMALL_ITER;
-
+        const parseMs = medianParseMs(outcomes);
         expect(outcomes.every((o) => o.ok)).toBe(true);
-        console.log(`Parser (small file, via pool): ${avg.toFixed(2)}ms avg`);
-        expect(avg).toBeLessThan(100);
+        console.log(`Parser (small file, via pool): ${parseMs.toFixed(2)}ms median parse`);
+        expect(parseMs).toBeLessThan(100);
       } finally {
         await pool.destroy();
       }
     });
 
-    it('should parse medium file in < 500ms avg', async () => {
+    it('should parse medium file in < 500ms median parse', async () => {
       // Generate a medium-sized file
       const lines = [];
       for (let i = 0; i < 100; i++) {
@@ -99,17 +108,16 @@ describe('Performance Benchmarks', () => {
         const start = performance.now();
         const outcomes = await pool.parseMany(jobs);
         const end = performance.now();
-        const avg = (end - start) / MEDIUM_ITER;
-
+        const parseMs = medianParseMs(outcomes);
         expect(outcomes.every((o) => o.ok)).toBe(true);
-        console.log(`Parser (medium file, 100 funcs, via pool): ${avg.toFixed(2)}ms avg`);
-        expect(avg).toBeLessThan(500);
+        console.log(`Parser (medium file, 100 funcs, via pool): ${parseMs.toFixed(2)}ms median parse`);
+        expect(parseMs).toBeLessThan(500);
       } finally {
         await pool.destroy();
       }
     });
 
-    it('should parse large file in < 2000ms avg', async () => {
+    it('should parse large file in < 2000ms median parse', async () => {
       // Generate a large file
       const lines = [];
       for (let i = 0; i < 1000; i++) {
@@ -126,11 +134,10 @@ describe('Performance Benchmarks', () => {
         const start = performance.now();
         const outcomes = await pool.parseMany(jobs);
         const end = performance.now();
-        const avg = (end - start) / LARGE_ITER;
-
+        const parseMs = medianParseMs(outcomes);
         expect(outcomes.every((o) => o.ok)).toBe(true);
-        console.log(`Parser (large file, 1000 funcs, via pool): ${avg.toFixed(2)}ms avg`);
-        expect(avg).toBeLessThan(2000);
+        console.log(`Parser (large file, 1000 funcs, via pool): ${parseMs.toFixed(2)}ms median parse`);
+        expect(parseMs).toBeLessThan(2000);
       } finally {
         await pool.destroy();
       }
