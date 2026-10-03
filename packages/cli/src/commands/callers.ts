@@ -4,12 +4,11 @@
 
 import path from 'path';
 import { SQLiteStore } from '@codeatlas/core';
+import { openStore } from '../lib/store.js';
 
 export async function callersCommand(symbolId: string, options?: { project?: string }) {
   const projectPath = path.resolve(options?.project || process.cwd());
-  const store = new SQLiteStore({
-    dbPath: path.join(projectPath, '.codeatlas', 'db.sqlite'),
-  });
+  const store = openStore(options);
 
   try {
     // Try multiple ID formats (handle path separator differences)

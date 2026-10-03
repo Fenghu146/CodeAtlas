@@ -4,16 +4,15 @@
 
 import path from 'path';
 import { SQLiteStore, DocExporter } from '@codeatlas/core';
+import { openStore, resolveProjectPath } from '../lib/store.js';
 
-export async function docCommand(options: {
+export async function docCommand(options: { project?: string;
   output?: string;
   source?: boolean;
   diagrams?: boolean;
   granularity?: string;
 }) {
-  const store = new SQLiteStore({
-    dbPath: path.join(process.cwd(), '.codeatlas', 'db.sqlite'),
-  });
+  const store = openStore(options);
 
   try {
     const exporter = new DocExporter(store);

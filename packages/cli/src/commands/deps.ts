@@ -4,14 +4,13 @@
 
 import path from 'path';
 import { SQLiteStore, DepAnalyzer } from '@codeatlas/core';
+import { openStore, resolveProjectPath } from '../lib/store.js';
 
-export async function depsCommand(options: {
+export async function depsCommand(options: { project?: string;
   format?: string;
   circular?: boolean;
 }) {
-  const store = new SQLiteStore({
-    dbPath: path.join(process.cwd(), '.codeatlas', 'db.sqlite'),
-  });
+  const store = openStore(options);
 
   try {
     const analyzer = new DepAnalyzer(store, process.cwd());

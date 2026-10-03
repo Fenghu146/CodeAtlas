@@ -5,10 +5,11 @@
 import path from 'path';
 import fs from 'fs';
 import { SQLiteStore } from '@codeatlas/core';
+import { resolveProjectPath } from '../lib/store.js';
 
-export async function exportCommand(options: { format?: string; output?: string }) {
+export async function exportCommand(options: { project?: string; format?: string; output?: string }) {
   const format = options.format || 'json';
-  const projectPath = process.cwd();
+  const projectPath = resolveProjectPath(options);
   const dbPath = path.join(projectPath, '.codeatlas', 'db.sqlite');
 
   // Check if database exists

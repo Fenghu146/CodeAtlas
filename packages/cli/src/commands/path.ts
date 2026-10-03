@@ -4,11 +4,10 @@
 
 import path from 'path';
 import { SQLiteStore, PathFinder } from '@codeatlas/core';
+import { openStore, resolveProjectPath } from '../lib/store.js';
 
-export async function pathCommand(source: string, target: string, options: { depth?: string; format?: string }) {
-  const store = new SQLiteStore({
-    dbPath: path.join(process.cwd(), '.codeatlas', 'db.sqlite'),
-  });
+export async function pathCommand(source: string, target: string, options: { project?: string; depth?: string; format?: string }) {
+  const store = openStore(options);
 
   try {
     const finder = new PathFinder(store);

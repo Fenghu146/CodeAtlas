@@ -4,11 +4,10 @@
 
 import path from 'path';
 import { SQLiteStore, CoverageAnalyzer } from '@codeatlas/core';
+import { openStore, resolveProjectPath } from '../lib/store.js';
 
-export async function coverageCommand(options: { symbol?: string; format?: string }) {
-  const store = new SQLiteStore({
-    dbPath: path.join(process.cwd(), '.codeatlas', 'db.sqlite'),
-  });
+export async function coverageCommand(options: { project?: string; symbol?: string; format?: string }) {
+  const store = openStore(options);
 
   try {
     const analyzer = new CoverageAnalyzer(store);

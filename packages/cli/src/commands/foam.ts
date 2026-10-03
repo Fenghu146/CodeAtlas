@@ -11,16 +11,15 @@
 
 import path from 'path';
 import { SQLiteStore, FoamExporter } from '@codeatlas/core';
+import { openStore, resolveProjectPath } from '../lib/store.js';
 
-export async function foamCommand(options: {
+export async function foamCommand(options: { project?: string;
   output?: string;
   open?: boolean;
   source?: boolean;
 }) {
-  const projectPath = process.cwd();
-  const store = new SQLiteStore({
-    dbPath: path.join(projectPath, '.codeatlas', 'db.sqlite'),
-  });
+  const projectPath = resolveProjectPath(options);
+  const store = openStore(options);
 
   // Check if graph exists
   const stats = store.getStats();

@@ -4,15 +4,14 @@
 
 import path from 'path';
 import { SQLiteStore, VectorStore, HybridSearch, createEmbeddingGenerator } from '@codeatlas/core';
+import { openStore, resolveProjectPath } from '../lib/store.js';
 
 export async function semanticCommand(
   subcommand: string,
   query: string,
-  options: { format?: string; top?: string; provider?: string },
+  options: { project?: string; format?: string; top?: string; provider?: string },
 ) {
-  const store = new SQLiteStore({
-    dbPath: path.join(process.cwd(), '.codeatlas', 'db.sqlite'),
-  });
+  const store = openStore(options);
 
   try {
     const generator = createEmbeddingGenerator({

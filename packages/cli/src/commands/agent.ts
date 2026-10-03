@@ -4,10 +4,11 @@
 
 import path from 'path';
 import { SQLiteStore, AgentRuntime, loadConfig, getAIConfig } from '@codeatlas/core';
+import { openStore, resolveProjectPath } from '../lib/store.js';
 
 export async function agentCommand(
   description: string,
-  options: {
+  options: { project?: string;
     target?: string;
     noVerify?: boolean;
     budget?: string;
@@ -16,9 +17,7 @@ export async function agentCommand(
     format?: string;
   },
 ) {
-  const store = new SQLiteStore({
-    dbPath: path.join(process.cwd(), '.codeatlas', 'db.sqlite'),
-  });
+  const store = openStore(options);
 
   try {
     const config = loadConfig(process.cwd());

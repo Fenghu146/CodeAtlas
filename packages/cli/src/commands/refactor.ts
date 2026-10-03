@@ -5,15 +5,14 @@
 import path from 'path';
 import { SQLiteStore, RefactorEngine } from '@codeatlas/core';
 import type { SmellType } from '@codeatlas/core';
+import { openStore, resolveProjectPath } from '../lib/store.js';
 
-export async function refactorCommand(options: {
+export async function refactorCommand(options: { project?: string;
   detect?: boolean;
   type?: string;
   format?: string;
 }) {
-  const store = new SQLiteStore({
-    dbPath: path.join(process.cwd(), '.codeatlas', 'db.sqlite'),
-  });
+  const store = openStore(options);
 
   try {
     const engine = new RefactorEngine(store);

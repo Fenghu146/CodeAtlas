@@ -5,9 +5,10 @@
 import path from 'path';
 import fs from 'fs';
 import { SQLiteStore, exportTeamData, importTeamData, loadTeamData, saveTeamData, summarizeTeamData } from '@codeatlas/core';
+import { resolveProjectPath } from '../lib/store.js';
 
-export async function teamExportCommand(options: { output?: string }) {
-  const projectPath = process.cwd();
+export async function teamExportCommand(options: { project?: string; output?: string }) {
+  const projectPath = resolveProjectPath(options);
   const dbPath = path.join(projectPath, '.codeatlas', 'db.sqlite');
 
   if (!fs.existsSync(dbPath)) {
@@ -31,8 +32,8 @@ export async function teamExportCommand(options: { output?: string }) {
   }
 }
 
-export async function teamImportCommand(inputFile: string) {
-  const projectPath = process.cwd();
+export async function teamImportCommand(inputFile: string, options: { project?: string } = {}) {
+  const projectPath = resolveProjectPath(options);
   const dbPath = path.join(projectPath, '.codeatlas', 'db.sqlite');
 
   if (!fs.existsSync(dbPath)) {
@@ -65,8 +66,8 @@ export async function teamImportCommand(inputFile: string) {
   }
 }
 
-export async function teamStatusCommand() {
-  const projectPath = process.cwd();
+export async function teamStatusCommand(options: { project?: string } = {}) {
+  const projectPath = resolveProjectPath(options);
   const dbPath = path.join(projectPath, '.codeatlas', 'db.sqlite');
 
   if (!fs.existsSync(dbPath)) {

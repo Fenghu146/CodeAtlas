@@ -4,6 +4,7 @@
 
 import path from 'path';
 import { SQLiteStore } from '@codeatlas/core';
+import { openStore } from '../lib/store.js';
 
 export async function hotspotsCommand(options: {
   format?: string;
@@ -14,9 +15,7 @@ export async function hotspotsCommand(options: {
   layer?: string;
 }) {
   const projectPath = path.resolve(options.project || process.cwd());
-  const store = new SQLiteStore({
-    dbPath: path.join(projectPath, '.codeatlas', 'db.sqlite'),
-  });
+  const store = openStore(options);
 
   try {
     const allSymbols = store.searchSymbols('', { limit: 10000 });

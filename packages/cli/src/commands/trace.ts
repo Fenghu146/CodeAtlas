@@ -4,11 +4,12 @@
 
 import path from 'path';
 import { TraceReader } from '@codeatlas/core';
+import { openStore, resolveProjectPath } from '../lib/store.js';
 
 export async function traceCommand(
   subcommand: string,
   tracePath: string,
-  options: { format?: string; step?: string },
+  options: { project?: string; format?: string; step?: string },
 ) {
   const resolvedPath = path.resolve(tracePath || process.cwd());
   const reader = new TraceReader(resolvedPath);
@@ -208,12 +209,10 @@ async function listRuns(reader: TraceReader, options: { format?: string }) {
   }
 }
 
-async function analyzeTrace(tracePath: string, options: { format?: string }) {
+async function analyzeTrace(tracePath: string, options: { format?: string; project?: string }) {
   const { SQLiteStore, TraceAnalyzer } = await import('@codeatlas/core');
 
-  const store = new SQLiteStore({
-    dbPath: path.join(process.cwd(), '.codeatlas', 'db.sqlite'),
-  });
+  const store = openStore(options);
 
   try {
     const analyzer = new TraceAnalyzer(store, tracePath);

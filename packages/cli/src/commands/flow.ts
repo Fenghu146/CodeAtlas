@@ -4,17 +4,16 @@
 
 import path from 'path';
 import { SQLiteStore, FlowAnalyzer } from '@codeatlas/core';
+import { openStore, resolveProjectPath } from '../lib/store.js';
 
 export async function flowCommand(
   entrySymbol: string,
-  options: { depth?: string; format?: string }
+  options: { project?: string; depth?: string; format?: string }
 ) {
   const depth = parseInt(options.depth || '5');
   const format = options.format || 'text';
 
-  const store = new SQLiteStore({
-    dbPath: path.join(process.cwd(), '.codeatlas', 'db.sqlite'),
-  });
+  const store = openStore(options);
 
   try {
     // Find the entry symbol

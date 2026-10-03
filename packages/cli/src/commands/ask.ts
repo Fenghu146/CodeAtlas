@@ -4,14 +4,13 @@
 
 import path from 'path';
 import { SQLiteStore, GraphCopilot } from '@codeatlas/core';
+import { openStore, resolveProjectPath } from '../lib/store.js';
 
 export async function askCommand(
   question: string,
-  options: { format?: string; mode?: 'quick' | 'deep'; session?: string } = {},
+  options: { project?: string; format?: string; mode?: 'quick' | 'deep'; session?: string } = {},
 ) {
-  const store = new SQLiteStore({
-    dbPath: path.join(process.cwd(), '.codeatlas', 'db.sqlite'),
-  });
+  const store = openStore(options);
 
   try {
     const copilot = new GraphCopilot(store, process.cwd());

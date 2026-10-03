@@ -133,6 +133,7 @@ program
 program
   .command('serve')
   .description('Start web visualization server')
+  .option('--project <path>', 'Project path (default: cwd)')
   .option('-p, --port <number>', 'Port number', '8080')
   .option('-w, --watch', 'Enable file watching for live updates')
   .action(async (options) => {
@@ -158,6 +159,7 @@ program
 program
   .command('export')
   .description('Export graph data')
+  .option('-p, --project <path>', 'Project path (default: cwd)')
   .option('-f, --format <format>', 'Export format (json|html)', 'json')
   .option('-o, --output <path>', 'Output file path')
   .action(async (options) => {
@@ -171,6 +173,7 @@ program
 program
   .command('foam')
   .description('Export code graph as Foam-compatible markdown for VSCode graph visualization')
+  .option('-p, --project <path>', 'Project path (default: cwd)')
   .option('-o, --output <path>', 'Output directory (default: .codeatlas/foam)')
   .option('--open', 'Open the Foam folder in VSCode after export')
   .option('--no-source', 'Exclude source code from generated notes')
@@ -217,6 +220,7 @@ program
 program
   .command('guard')
   .description('Architecture gate: enforce rules (circular deps, layer violations, complexity)')
+  .option('-p, --project <path>', 'Project path (default: cwd)')
   .option('-f, --format <format>', 'Output format (text|json)', 'text')
   .option('--install', 'Install as git pre-commit hook')
   .option('--max-depth <number>', 'Max allowed impact depth', '3')
@@ -232,6 +236,7 @@ program
 program
   .command('doc')
   .description('Generate documentation skeletons with Mermaid diagrams')
+  .option('-p, --project <path>', 'Project path (default: cwd)')
   .option('-o, --output <path>', 'Output directory (default: .codeatlas/docs)')
   .option('--no-source', 'Exclude source code from docs')
   .option('--no-diagrams', 'Exclude Mermaid diagrams')
@@ -278,6 +283,7 @@ program
 program
   .command('agent <description>')
   .description('AI Agent: plan + generate + verify with iterative refinement')
+  .option('-p, --project <path>', 'Project path (default: cwd)')
   .option('-t, --target <symbol>', 'Target symbol to focus on')
   .option('--no-verify', 'Skip verification step')
   .option('--budget <tokens>', 'Total token budget', '8000')
@@ -295,6 +301,7 @@ program
 program
   .command('trace <subcommand> [path]')
   .description('Flowtrace integration: load, steps, step, flow, stats, runs')
+  .option('-p, --project <path>', 'Project path (default: cwd)')
   .option('-f, --format <format>', 'Output format (text|json)', 'text')
   .option('--step <step_id>', 'Step ID for step subcommand')
   .action(async (subcommand, tracePath, options) => {
@@ -322,6 +329,7 @@ program
 program
   .command('semantic <subcommand> [query]')
   .description('Semantic search with embeddings: index, search, stats')
+  .option('-p, --project <path>', 'Project path (default: cwd)')
   .option('-f, --format <format>', 'Output format (text|json)', 'text')
   .option('-n, --top <number>', 'Number of results', '10')
   .option('--provider <provider>', 'Embedding provider (local|openai|ollama)', 'local')
@@ -350,6 +358,7 @@ program
 program
   .command('graph-export')
   .description('Export graph data for analysis (JSON, CSV, Mermaid, Matrix, Stats)')
+  .option('-p, --project <path>', 'Project path (default: cwd)')
   .option('-f, --format <format>', 'Export format (json|csv|mermaid|matrix|stats)', 'json')
   .option('-o, --output <path>', 'Output file path')
   .option('-l, --layer <layer>', 'Filter by layer')
@@ -367,6 +376,7 @@ program
 program
   .command('diff')
   .description('Compare graph states: show added/removed/moved symbols')
+  .option('-p, --project <path>', 'Project path (default: cwd)')
   .option('-b, --baseline <path>', 'Baseline file to compare against')
   .option('-s, --save <path>', 'Save current state as baseline')
   .option('-f, --format <format>', 'Output format (text|json)', 'text')
@@ -421,11 +431,13 @@ program
 // ========================
 const team = program
   .command('team')
-  .description('Team collaboration features');
+  .description('Team collaboration features')
+  .option('-p, --project <path>', 'Project path (default: cwd)');
 
 team
   .command('export')
   .description('Export team data (annotations, metadata)')
+  .option('-p, --project <path>', 'Project path (default: cwd)')
   .option('-o, --output <path>', 'Output file path')
   .action(async (options) => {
     const { teamExportCommand } = await import('./commands/team.js');
@@ -435,17 +447,17 @@ team
 team
   .command('import <file>')
   .description('Import team data from file')
-  .action(async (file) => {
+  .action(async (file, options) => {
     const { teamImportCommand } = await import('./commands/team.js');
-    await teamImportCommand(file);
+    await teamImportCommand(file, options);
   });
 
 team
   .command('status')
   .description('Show team collaboration status')
-  .action(async () => {
+  .action(async (options) => {
     const { teamStatusCommand } = await import('./commands/team.js');
-    await teamStatusCommand();
+    await teamStatusCommand(options);
   });
 
 program.parse();

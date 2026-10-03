@@ -4,15 +4,14 @@
 
 import path from 'path';
 import { SQLiteStore } from '@codeatlas/core';
+import { openStore } from '../lib/store.js';
 
 export async function searchCommand(
   query: string,
   options: { kind?: string; layer?: string; limit?: string; project?: string; file?: string },
 ) {
   const projectPath = path.resolve(options.project || process.cwd());
-  const store = new SQLiteStore({
-    dbPath: path.join(projectPath, '.codeatlas', 'db.sqlite'),
-  });
+  const store = openStore(options);
 
   try {
     const limit = Math.min(parseInt(options.limit || '20'), 200);

@@ -6,8 +6,9 @@ import path from 'path';
 import fs from 'fs';
 import { SQLiteStore, GraphExporter } from '@codeatlas/core';
 import type { ExportFormat } from '@codeatlas/core';
+import { openStore, resolveProjectPath } from '../lib/store.js';
 
-export async function graphExportCommand(options: {
+export async function graphExportCommand(options: { project?: string;
   format?: string;
   output?: string;
   layer?: string;
@@ -15,9 +16,7 @@ export async function graphExportCommand(options: {
   limit?: string;
   stats?: boolean;
 }) {
-  const store = new SQLiteStore({
-    dbPath: path.join(process.cwd(), '.codeatlas', 'db.sqlite'),
-  });
+  const store = openStore(options);
 
   try {
     const exporter = new GraphExporter(store);

@@ -5,15 +5,14 @@
 import path from 'path';
 import fs from 'fs';
 import { SQLiteStore, DiffAnalyzer } from '@codeatlas/core';
+import { openStore, resolveProjectPath } from '../lib/store.js';
 
-export async function diffCommand(options: {
+export async function diffCommand(options: { project?: string;
   baseline?: string;
   save?: string;
   format?: string;
 }) {
-  const store = new SQLiteStore({
-    dbPath: path.join(process.cwd(), '.codeatlas', 'db.sqlite'),
-  });
+  const store = openStore(options);
 
   try {
     const analyzer = new DiffAnalyzer(store);

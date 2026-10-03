@@ -8,10 +8,11 @@ import http from 'http';
 import url from 'url';
 import { WebSocketServer, WebSocket } from 'ws';
 import { SQLiteStore, ProjectScanner, FileWatcher } from '@codeatlas/core';
+import { resolveProjectPath } from '../lib/store.js';
 
-export async function serveCommand(options: { port?: string; watch?: boolean }) {
+export async function serveCommand(options: { project?: string; port?: string; watch?: boolean }) {
   const port = parseInt(options.port || '8080');
-  const projectPath = process.cwd();
+  const projectPath = resolveProjectPath(options);
 
   // Check if web build exists (look relative to project root)
   const webDistPath = path.join(projectPath, 'packages', 'web', 'dist');

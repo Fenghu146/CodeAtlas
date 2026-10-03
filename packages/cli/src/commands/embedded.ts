@@ -5,15 +5,14 @@
 import path from 'path';
 import { SQLiteStore, EmbeddedAnalyzer, BuildAnalyzer } from '@codeatlas/core';
 import { EmbeddedLinuxAnalyzer } from '@codeatlas/core';
+import { openStore } from '../lib/store.js';
 
 export async function embeddedCommand(
   subcommand: string,
   options: { format?: string; project?: string; profile?: string },
 ) {
   const projectPath = path.resolve(options.project || process.cwd());
-  const store = new SQLiteStore({
-    dbPath: path.join(projectPath, '.codeatlas', 'db.sqlite'),
-  });
+  const store = openStore(options);
 
   try {
     switch (subcommand) {

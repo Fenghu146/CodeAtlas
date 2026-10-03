@@ -4,17 +4,17 @@
 
 import path from 'path';
 import { SQLiteStore } from '@codeatlas/core';
+import { openStore, resolveProjectPath } from '../lib/store.js';
 
 interface LayersOptions {
+  project?: string;
   byFile?: boolean;
   sort?: string;
   limit?: number;
 }
 
 export async function layersCommand(options: LayersOptions = {}) {
-  const store = new SQLiteStore({
-    dbPath: path.join(process.cwd(), '.codeatlas', 'db.sqlite'),
-  });
+  const store = openStore(options);
 
   try {
     const stats = store.getStats();

@@ -5,17 +5,16 @@
 import path from 'path';
 import { execSync } from 'child_process';
 import { SQLiteStore, ReviewAnalyzer, loadConfig, getAIConfig } from '@codeatlas/core';
+import { openStore, resolveProjectPath } from '../lib/store.js';
 
-export async function reviewCommand(options: {
+export async function reviewCommand(options: { project?: string;
   focus?: string;
   format?: string;
   depth?: string;
   smart?: boolean;
   budget?: string;
 }) {
-  const store = new SQLiteStore({
-    dbPath: path.join(process.cwd(), '.codeatlas', 'db.sqlite'),
-  });
+  const store = openStore(options);
 
   try {
     // Get changed files from git

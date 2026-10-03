@@ -7,8 +7,9 @@ import fs from 'fs';
 import { execSync } from 'child_process';
 import { SQLiteStore, GuardAnalyzer, loadConfig } from '@codeatlas/core';
 import type { GuardConfig } from '@codeatlas/core';
+import { openStore, resolveProjectPath } from '../lib/store.js';
 
-export async function guardCommand(options: {
+export async function guardCommand(options: { project?: string;
   format?: string;
   install?: boolean;
   maxDepth?: string;
@@ -20,9 +21,7 @@ export async function guardCommand(options: {
     return;
   }
 
-  const store = new SQLiteStore({
-    dbPath: path.join(process.cwd(), '.codeatlas', 'db.sqlite'),
-  });
+  const store = openStore(options);
 
   try {
     // Load guard config from .codeatlas.yaml if available
