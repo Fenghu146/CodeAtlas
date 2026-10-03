@@ -28,9 +28,11 @@ import { spawn, type ChildProcessByStdio } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { availableParallelism, freemem, totalmem } from 'node:os';
 import { createInterface } from 'node:readline';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import path from 'node:path';
 import { appendFileSync } from 'node:fs';
 import type { Readable, Writable } from 'node:stream';
+import { assetDir } from './asset-dir.js';
 import type { ParseResult } from './index.js';
 import type { ParseMessage, ParseRequest } from './parse-protocol.js';
 
@@ -472,16 +474,28 @@ export class ParserPool {
  * fall back to in-process parsing rather than failing the scan.
  */
 export function resolveChildScript(): URL | null {
-  const here = import.meta.url;
+  // Resolve the independently-spawned worker against assetDir() so it is found
+  // in the ESM source layout, the CJS bundle (VS Code extension), and running
+  // from source before a build — not via `import.meta.url`, which esbuild
+  // substitutes away in CJS bundles.
+  const base = assetDir();
   const candidates = [
-    new URL('./parse-child.js', here),
-    new URL('../../dist/parser/parse-child.js', here),
+    // Core built (dist/parser/) and the VS Code bundle (dist/): the worker is a
+    // sibling of this module's asset dir.
+    path.join(base, 'parse-child.js'),
+    // Core source (src/parser/) under vitest/tsc: the worker is the built file
+    // two levels up in dist/parser/. This preserves child-process WASM
+    // isolation instead of silently falling back to in-process parsing.
+    path.join(base, '..', '..', 'dist', 'parser', 'parse-child.js'),
+    path.join(base, '..', 'dist', 'parser', 'parse-child.js'),
+    path.join(base, 'dist', 'parse-child.js'),
+    path.join(base, '..', 'parse-child.js'),
   ];
   for (const candidate of candidates) {
     try {
-      if (existsSync(fileURLToPath(candidate))) return candidate;
+      if (existsSync(candidate)) return pathToFileURL(candidate);
     } catch {
-      // Not a file URL we can check (e.g. bundled) — try the next candidate.
+      // Unusable path — try the next candidate.
     }
   }
   return null;

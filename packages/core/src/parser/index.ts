@@ -6,7 +6,7 @@
 
 import Parser from 'web-tree-sitter';
 import path from 'path';
-import { fileURLToPath } from 'url';
+import { assetDir } from './asset-dir.js';
 
 // Re-export type for use in other modules
 type SyntaxNode = Parser.SyntaxNode;
@@ -135,7 +135,7 @@ export class CodeParser {
     if (this.parsers.has(lang)) return;
 
     const parser = new Parser();
-    const currentDir = path.dirname(fileURLToPath(import.meta.url));
+    const currentDir = assetDir();
     const wasmPath = path.join(currentDir, 'language-packs', `tree-sitter-${lang}.wasm`);
     const language = await Parser.Language.load(wasmPath);
     parser.setLanguage(language);
