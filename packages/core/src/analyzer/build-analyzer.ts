@@ -69,39 +69,49 @@ export class BuildAnalyzer {
 
   /**
    * Detect and parse the build system configuration.
-   * Searches current directory and parent directories.
+   * Searches the project directory, its immediate subdirectories (common for
+   * `firmware/Makefile` style layouts), then parent directories.
    */
   analyze(): BuildConfig {
-    // Search current directory and up to 5 parent directories
+    // Project directory first, then one level of subdirectories.
+    const startDirs = [this.projectPath, ...this.childDirs(this.projectPath)];
+    for (const dir of startDirs) {
+      const config = this.parseAt(dir);
+      if (config) return config;
+    }
+
+    // Then up to 5 parent directories.
     let searchPath = this.projectPath;
     for (let i = 0; i < 6; i++) {
-      // Try embedded Linux build families first (Kbuild/Yocto/Buildroot)
-      const linuxConfig = this.parseEmbeddedLinux(searchPath);
-      if (linuxConfig) return linuxConfig;
-
-      // Try platformio.ini
-      const pioConfig = this.parsePlatformIO(searchPath);
-      if (pioConfig) return pioConfig;
-
-      // Try CMakeLists.txt
-      const cmakeConfig = this.parseCMake(searchPath);
-      if (cmakeConfig) return cmakeConfig;
-
-      // Try Makefile
-      const makefileConfig = this.parseMakefile(searchPath);
-      if (makefileConfig) return makefileConfig;
-
-      // Try Cargo.toml (for Rust embedded)
-      const cargoConfig = this.parseCargo(searchPath);
-      if (cargoConfig) return cargoConfig;
-
-      // Move to parent directory
       const parent = path.dirname(searchPath);
-      if (parent === searchPath) break; // Reached root
       searchPath = parent;
+      const config = this.parseAt(searchPath);
+      if (config) return config;
+      if (parent === searchPath) break; // Reached root
     }
 
     return { type: 'unknown', dependencies: [], flags: [], includes: [], sources: [] };
+  }
+
+  /** Parse any known build config living directly in `dir`. */
+  private parseAt(dir: string): BuildConfig | null {
+    // Try embedded Linux build families first (Kbuild/Yocto/Buildroot)
+    return this.parseEmbeddedLinux(dir)
+      ?? this.parsePlatformIO(dir)
+      ?? this.parseCMake(dir)
+      ?? this.parseMakefile(dir)
+      ?? this.parseCargo(dir);
+  }
+
+  /** Immediate subdirectories worth searching for build configs. */
+  private childDirs(dir: string): string[] {
+    try {
+      return fs.readdirSync(dir, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.') && entry.name !== 'node_modules')
+        .map((entry) => path.join(dir, entry.name));
+    } catch {
+      return [];
+    }
   }
 
   /**

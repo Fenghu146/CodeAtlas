@@ -681,9 +681,10 @@ export class CodeParser {
   ): ParsedRelationship[] {
     const relationships: ParsedRelationship[] = [];
     const symbolNames = new Set(symbols.map(s => s.name));
+    const localNames = this.collectLocalNames(node);
 
     // 1. Extract call relationships
-    this.walkForRelationships(node, sourceCode, symbolNames, symbols, relationships);
+    this.walkForRelationships(node, sourceCode, symbolNames, symbols, relationships, localNames);
 
     // 2. Extract imports relationships
     this.extractImportRelationships(node, sourceCode, symbols, relationships);
@@ -816,12 +817,13 @@ export class CodeParser {
     symbolNames: Set<string>,
     symbols: ParsedSymbol[],
     relationships: ParsedRelationship[],
+    localNames: Set<string>,
   ): void {
     // Detect function calls: call_expression (JS/TS) or call (Python)
     if (node.type === 'call_expression' || node.type === 'call') {
       const funcNode = node.childForFieldName('function');
       if (funcNode) {
-        const funcName = sourceCode.slice(funcNode.startIndex, funcNode.endIndex);
+        const funcName = this.normalizeCallTarget(funcNode, sourceCode);
         // Find which symbol contains this call
         const containingSymbol = this.findContainingSymbol(node, symbols);
         if (containingSymbol) {
@@ -839,7 +841,7 @@ export class CodeParser {
       // This handles dependency injection patterns
       const argListNode = node.children.find(c => c.type === 'argument_list' || c.type === 'arguments');
       if (argListNode) {
-        this.findFunctionReferencesInArgs(argListNode, sourceCode, symbolNames, symbols, node, relationships);
+        this.findFunctionReferencesInArgs(argListNode, sourceCode, symbolNames, symbols, node, relationships, localNames);
       }
     }
 
@@ -863,19 +865,78 @@ export class CodeParser {
     }
 
     for (const child of node.children) {
-      this.walkForRelationships(child, sourceCode, symbolNames, symbols, relationships);
+      this.walkForRelationships(child, sourceCode, symbolNames, symbols, relationships, localNames);
     }
   }
 
-  /** Find which top-level symbol contains a given node */
+  /** Resolve the callee name for a call expression's `function` node. */
+  private normalizeCallTarget(funcNode: SyntaxNode, sourceCode: string): string {
+    // `this.repo.save()` / `console.log()` — use the property name so the call
+    // resolves to the `save` symbol instead of the literal expression text.
+    if (funcNode.type === 'member_expression') {
+      const prop = funcNode.childForFieldName('property');
+      if (prop) return sourceCode.slice(prop.startIndex, prop.endIndex);
+    }
+    // C/C++ `obj->fn()` / `obj.method()` — the callee is the `field` child.
+    if (funcNode.type === 'field_expression') {
+      const field = funcNode.childForFieldName('field');
+      if (field) return sourceCode.slice(field.startIndex, field.endIndex);
+    }
+    // C++ `ns::fn()` — the callee is the `name` child.
+    if (funcNode.type === 'qualified_identifier') {
+      const name = funcNode.childForFieldName('name');
+      if (name) return sourceCode.slice(name.startIndex, name.endIndex);
+    }
+    return sourceCode.slice(funcNode.startIndex, funcNode.endIndex);
+  }
+
+  /**
+   * Collect names bound to local values (variables, parameters) in this file.
+   * Keeps call detection from mistaking a local value passed as an argument
+   * (`printf("%d", total)`) for a function reference.
+   */
+  private collectLocalNames(rootNode: SyntaxNode): Set<string> {
+    const names = new Set<string>();
+    const add = (n: SyntaxNode | null): void => {
+      if (n && n.namedChildCount === 0) names.add(n.text);
+    };
+    const visit = (n: SyntaxNode): void => {
+      if (/declarator$/.test(n.type) || n.type === 'let_declaration') {
+        for (const field of ['name', 'declarator', 'pattern']) {
+          add(n.childForFieldName(field));
+        }
+      }
+      if (n.type === 'required_parameter' || n.type === 'optional_parameter' || n.type === 'default_parameter') {
+        add(n.childForFieldName('pattern') ?? n.childForFieldName('name'));
+      }
+      // Python: `def f(a, b)` — bare parameter identifiers under `parameters`.
+      if (n.type === 'parameters') {
+        for (const child of n.children) {
+          if (child.type === 'identifier') add(child);
+        }
+      }
+      for (const child of n.children) visit(child);
+    };
+    visit(rootNode);
+    return names;
+  }
+
+  /** Find the symbol containing a node — the innermost declaration wins. */
   private findContainingSymbol(node: SyntaxNode, symbols: ParsedSymbol[]): string | null {
     const line = node.startPosition.row + 1;
+    let best: ParsedSymbol | null = null;
     for (const symbol of symbols) {
-      if (line >= symbol.startLine && line <= symbol.endLine) {
-        return symbol.name;
+      if (line < symbol.startLine || line > symbol.endLine) continue;
+      // A call inside a method belongs to the method, not to its class.
+      if (!best) {
+        best = symbol;
+        continue;
       }
+      const bestSpan = best.endLine - best.startLine;
+      const span = symbol.endLine - symbol.startLine;
+      if (span < bestSpan || (span === bestSpan && symbol.startLine > best.startLine)) best = symbol;
     }
-    return null;
+    return best ? best.name : null;
   }
 
   /** Recursively find function references in argument lists */
@@ -886,6 +947,7 @@ export class CodeParser {
     symbols: ParsedSymbol[],
     callNode: SyntaxNode,
     relationships: ParsedRelationship[],
+    localNames: Set<string>,
   ): void {
     // Guard against null/undefined nodes
     if (!node || !node.type) return;
@@ -909,7 +971,7 @@ export class CodeParser {
         // Create relationship if:
         // 1. Target is a known function/method, OR
         // 2. Target looks like a function (heuristic for cross-file references)
-        if (isKnownFunction || looksLikeFunction || symbolNames.has(name)) {
+        if (isKnownFunction || symbolNames.has(name) || (looksLikeFunction && !localNames.has(name))) {
           relationships.push({
             sourceName: containingSymbol,
             targetName: name,
@@ -924,9 +986,9 @@ export class CodeParser {
     if (node.type !== 'call_expression' && node.type !== 'call') {
       for (const child of node.children) {
         if (child) { // Guard against null children
-          this.findFunctionReferencesInArgs(child, sourceCode, symbolNames, symbols, callNode, relationships);
-        }
-      }
+      this.findFunctionReferencesInArgs(child, sourceCode, symbolNames, symbols, callNode, relationships, localNames);
+    }
+  }
     }
   }
 
