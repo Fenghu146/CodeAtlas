@@ -302,7 +302,10 @@ export class ParserPool {
     this.options = {
       maxWorkers: options.maxWorkers ?? Math.max(1, Math.min(4, Math.floor(cpus / 2))),
       maxFilesPerWorker: options.maxFilesPerWorker ?? 25,
-      maxRssMb: options.maxRssMb ?? 256,
+      // The child baseline (tree-sitter + grammar WASM) is ~240MB; a cap below
+      // that recycles the worker after every single job. 512MB allows real work
+      // before the (upstream) per-parse WASM leak forces a recycle.
+      maxRssMb: options.maxRssMb ?? 512,
       jobTimeoutMs: options.jobTimeoutMs ?? 60_000,
       maxRetries: options.maxRetries ?? 2,
     };

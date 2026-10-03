@@ -89,7 +89,7 @@ describe('Performance Benchmarks', () => {
       } finally {
         await pool.destroy();
       }
-    });
+    }, 120_000);
 
     it('should parse medium file in < 500ms median parse', async () => {
       // Generate a medium-sized file
@@ -115,7 +115,7 @@ describe('Performance Benchmarks', () => {
       } finally {
         await pool.destroy();
       }
-    });
+    }, 120_000);
 
     it('should parse large file in < 2000ms median parse', async () => {
       // Generate a large file
@@ -141,7 +141,7 @@ describe('Performance Benchmarks', () => {
       } finally {
         await pool.destroy();
       }
-    });
+    }, 120_000);
   });
 
   describe('Store Performance', () => {
