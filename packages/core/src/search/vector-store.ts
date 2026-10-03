@@ -28,6 +28,19 @@ export class VectorStore {
     this.generator = generator || createEmbeddingGenerator({ provider: 'local' });
   }
 
+  private loaded = false;
+
+  /**
+   * Load persisted embeddings on first read. Without this, a fresh store (as
+   * created by every query) reports an empty index and the vector search path
+   * silently degrades forever.
+   */
+  private ensureLoaded(): void {
+    if (this.loaded) return;
+    this.loaded = true;
+    this.loadEmbeddings();
+  }
+
   /**
    * Index all symbols with embeddings.
    */
@@ -75,6 +88,7 @@ export class VectorStore {
    * Search for similar symbols.
    */
   async search(query: string, topK: number = 10): Promise<SearchResult[]> {
+    this.ensureLoaded();
     // Generate query embedding
     const queryEmbedding = await this.generator.embed(query);
 
@@ -105,6 +119,7 @@ export class VectorStore {
    * Get embedding for a symbol.
    */
   getEmbedding(symbolId: string): number[] | undefined {
+    this.ensureLoaded();
     return this.embeddings.get(symbolId);
   }
 
@@ -112,6 +127,7 @@ export class VectorStore {
    * Check if symbol is indexed.
    */
   isIndexed(symbolId: string): boolean {
+    this.ensureLoaded();
     return this.embeddings.has(symbolId);
   }
 
@@ -119,6 +135,7 @@ export class VectorStore {
    * Get index statistics.
    */
   getStats(): { indexed: number; dimension: number } {
+    this.ensureLoaded();
     return {
       indexed: this.embeddings.size,
       dimension: this.generator.getDimension(),
@@ -217,6 +234,7 @@ export class VectorStore {
    * Load embeddings from SQLite.
    */
   loadEmbeddings(): void {
+    this.loaded = true;
     try {
       const rows = this.store.executeQuery('SELECT symbol_id, embedding FROM symbol_embeddings');
       for (const row of rows) {

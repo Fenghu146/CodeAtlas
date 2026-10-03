@@ -171,6 +171,7 @@ describe('MCP tools against a scanned fixture', () => {
   it('summarizes the index', async () => {
     const text = textOf(await call('codeatlas_summary'));
     expect(text).toMatch(/\d+/);
+    expect(text).toMatch(/Semantic Index:/);
   });
 
   it('lists dependency metadata', async () => {
@@ -232,6 +233,18 @@ describe('MCP tools against a scanned fixture', () => {
     const outDir = path.join(workDir, 'foam');
     const text = textOf(await call('codeatlas_graph_export', { format: 'foam', output: outDir }));
     expect(text).toMatch(/foam|export|markdown/i);
+  });
+
+  it('builds embeddings and serves vector search offline', async () => {
+    const indexText = textOf(await call('codeatlas_semantic_index', { provider: 'local' }));
+    expect(indexText).toMatch(/index|embed|symbol/i);
+    const searchText = textOf(await call('codeatlas_semantic_search', {
+      query: 'how are users registered',
+      mode: 'vector',
+    }));
+    // The closed loop must return ranked symbols — not a degradation message.
+    expect(searchText).not.toMatch(/no embeddings indexed|not configured/i);
+    expect(searchText).toMatch(/create|user|register|match/i);
   });
 });
 

@@ -936,6 +936,9 @@ server.tool(
       .map(([mod, count]) => `  - ${mod}: ${count} symbols`)
       .join('\n');
 
+    // Semantic index state — tells the agent whether vector search is usable.
+    const vectorStats = new VectorStore(store).getStats();
+
     const summary = `📊 Project Summary
 ═══════════════════════════════════════
 📁 Files: ${stats.files}
@@ -950,7 +953,9 @@ server.tool(
   - Utility: ${layerCounts.utility || 0} (Helpers)
 
 📦 Top Modules:
-${topModules || '  No modules found'}`;
+${topModules || '  No modules found'}
+
+🧠 Semantic Index: ${vectorStats.indexed > 0 ? `${vectorStats.indexed} symbols embedded (${vectorStats.dimension}d)` : 'not built — run codeatlas_semantic_index first'}`;
 
     return {
       content: [{
