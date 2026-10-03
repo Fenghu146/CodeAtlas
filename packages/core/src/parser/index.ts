@@ -273,6 +273,22 @@ export class CodeParser {
       'field_declaration',    // class/struct members and method declarations
       'preproc_def',          // #define
       'preproc_function_def', // #define FUNC()
+      // TypeScript/JavaScript class fields
+      'public_field_definition',
+      // Java specifics
+      'method_declaration',
+      'constructor_declaration',
+      'record_declaration',
+      'annotation_type_declaration',
+      // Rust specifics (impl_item is not extracted — it only names the parent)
+      'struct_item',
+      'enum_item',
+      'trait_item',
+      'function_item',
+      'function_signature_item',
+      'mod_item',
+      'type_item',
+      'const_item',
       // Embedded C specifics
       'type_definition',      // typedef
       'declaration',          // file-scope declarations (locals are skipped)
@@ -294,9 +310,33 @@ export class CodeParser {
     // Extract name - varies by language and node type
     let nameNode: SyntaxNode | null = node.childForFieldName('name') ?? null;
 
-    // Fallback: find identifier or type_identifier in children
+    // Python assignments name their target, not the value: `self.name = raw`
+    // is the attribute `name` (unwrap `obj.attr` to `attr`).
+    if (!nameNode && node.type === 'assignment') {
+      const target = node.childForFieldName('left') ?? node.childForFieldName('target');
+      if (target) {
+        nameNode = target.childForFieldName('attribute') ?? target.childForFieldName('name') ?? target;
+      }
+    }
+
+    // Java/Rust/C declarators: the name lives in the declarator, never in the
+    // type (`private String prefix;` — `String` is the type, `prefix` the name).
     if (!nameNode) {
-      nameNode = node.children.find(c => c.type === 'identifier' || c.type === 'type_identifier') ?? null;
+      const declarator = node.childForFieldName('declarator');
+      if (declarator) {
+        nameNode = declarator.childForFieldName('name')
+          ?? (declarator.namedChildCount === 1 ? declarator.namedChild(0) : null)
+          ?? declarator;
+      }
+    }
+
+    // Fallback: a plain identifier child (never the type — see below).
+    if (!nameNode) {
+      nameNode = node.children.find(c => c.type === 'identifier') ?? null;
+    }
+    // Last resort: the type name, kept only when nothing else identifies the symbol.
+    if (!nameNode) {
+      nameNode = node.children.find(c => c.type === 'type_identifier') ?? null;
     }
 
     if (!nameNode) return null;
@@ -311,17 +351,30 @@ export class CodeParser {
       ? this.calculateComplexity(sourceSlice, lang)
       : undefined;
 
-    // Detect parent (class containing method)
+    // Detect the enclosing type (class/struct/impl/trait) and use it as parent.
+    // Rust names the parent of an `impl` block through its `type` field.
     let parentName: string | undefined;
-    if (kind === 'method') {
-      // Walk up to find the class
+    {
       let parent = node.parent;
       while (parent) {
-        if (parent.type === 'class_definition' || parent.type === 'class_declaration') {
-          const parentNameNode = parent.childForFieldName('name')
+        const isTypeBody =
+          parent.type === 'class_definition' ||
+          parent.type === 'class_declaration' ||
+          parent.type === 'class_specifier' ||
+          parent.type === 'struct_specifier' ||
+          parent.type === 'record_declaration' ||
+          parent.type === 'interface_declaration' ||
+          parent.type === 'trait_item' ||
+          parent.type === 'struct_item' ||
+          parent.type === 'impl_item';
+        if (isTypeBody) {
+          const parentNameNode = parent.childForFieldName('type')
+            ?? parent.childForFieldName('name')
             ?? parent.children.find(c => c.type === 'identifier' || c.type === 'type_identifier');
           if (parentNameNode) {
             parentName = sourceCode.slice(parentNameNode.startIndex, parentNameNode.endIndex);
+            // A function declared in a type body is a method.
+            if (kind === 'function') kind = 'method';
           }
           break;
         }
@@ -555,6 +608,20 @@ export class CodeParser {
       'type_definition': 'type',           // typedef (name lives in the declarator)
       'declaration': 'variable',           // refined to function/method via declarator
       'field_declaration': 'property',     // refined to method for method declarations
+      'public_field_definition': 'property',  // TS/JS class field
+      // Java
+      'method_declaration': 'method',
+      'constructor_declaration': 'method',
+      'record_declaration': 'class',
+      'annotation_type_declaration': 'interface',
+      // Rust
+      'struct_item': 'class',              // struct (aggregate like class)
+      'trait_item': 'interface',
+      'function_item': 'function',         // promoted to method inside impl
+      'function_signature_item': 'function',
+      'mod_item': 'module',
+      'type_item': 'type',
+      'const_item': 'constant',
     };
     return map[nodeType] ?? null;
   }
@@ -820,8 +887,11 @@ export class CodeParser {
     localNames: Set<string>,
   ): void {
     // Detect function calls: call_expression (JS/TS) or call (Python)
-    if (node.type === 'call_expression' || node.type === 'call') {
-      const funcNode = node.childForFieldName('function');
+    if (node.type === 'call_expression' || node.type === 'call' || node.type === 'method_invocation' || node.type === 'object_creation_expression') {
+      // Java call nodes carry the callee in `name`/`type` — hand the node itself
+      // to normalizeCallTarget, which knows how to pick the right child.
+      const funcNode = node.childForFieldName('function')
+        ?? (node.type === 'method_invocation' || node.type === 'object_creation_expression' ? node : null);
       if (funcNode) {
         const funcName = this.normalizeCallTarget(funcNode, sourceCode);
         // Find which symbol contains this call
@@ -871,6 +941,16 @@ export class CodeParser {
 
   /** Resolve the callee name for a call expression's `function` node. */
   private normalizeCallTarget(funcNode: SyntaxNode, sourceCode: string): string {
+    // Java `obj.method()` / `new Foo()` — the callee is `name` or `type`.
+    if (funcNode.type === 'method_invocation') {
+      const name = funcNode.childForFieldName('name');
+      if (name) return sourceCode.slice(name.startIndex, name.endIndex);
+    }
+    if (funcNode.type === 'object_creation_expression') {
+      const type = funcNode.childForFieldName('type');
+      if (type) return sourceCode.slice(type.startIndex, type.endIndex);
+    }
+
     // `this.repo.save()` / `console.log()` — use the property name so the call
     // resolves to the `save` symbol instead of the literal expression text.
     if (funcNode.type === 'member_expression') {
@@ -881,6 +961,11 @@ export class CodeParser {
     if (funcNode.type === 'field_expression') {
       const field = funcNode.childForFieldName('field');
       if (field) return sourceCode.slice(field.startIndex, field.endIndex);
+    }
+    // Python `raw.strip()` — the callee is the `attribute` child.
+    if (funcNode.type === 'attribute') {
+      const attr = funcNode.childForFieldName('attribute');
+      if (attr) return sourceCode.slice(attr.startIndex, attr.endIndex);
     }
     // C++ `ns::fn()` — the callee is the `name` child.
     if (funcNode.type === 'qualified_identifier') {
@@ -906,7 +991,7 @@ export class CodeParser {
           add(n.childForFieldName(field));
         }
       }
-      if (n.type === 'required_parameter' || n.type === 'optional_parameter' || n.type === 'default_parameter') {
+      if (n.type === 'required_parameter' || n.type === 'optional_parameter' || n.type === 'default_parameter' || n.type === 'typed_parameter') {
         add(n.childForFieldName('pattern') ?? n.childForFieldName('name'));
       }
       // Python: `def f(a, b)` — bare parameter identifiers under `parameters`.
@@ -968,10 +1053,15 @@ export class CodeParser {
         // Also check if it looks like a function (lowercase, common patterns)
         const looksLikeFunction = name.length > 0 && name[0] === name[0].toLowerCase() && !name.startsWith('_');
 
+        // A local value shadows any same-named symbol: `foo(name)` where `name`
+        // is a parameter is not a reference to the `name` symbol.
+        if (localNames.has(name)) return;
+
         // Create relationship if:
         // 1. Target is a known function/method, OR
-        // 2. Target looks like a function (heuristic for cross-file references)
-        if (isKnownFunction || symbolNames.has(name) || (looksLikeFunction && !localNames.has(name))) {
+        // 2. Target is a known symbol in this file, OR
+        // 3. Target looks like a function (heuristic for cross-file references)
+        if (isKnownFunction || symbolNames.has(name) || looksLikeFunction) {
           relationships.push({
             sourceName: containingSymbol,
             targetName: name,
