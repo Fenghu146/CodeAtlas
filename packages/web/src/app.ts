@@ -3,6 +3,7 @@
 // ============================================================
 
 import cytoscape, { type Core, type EventObject } from 'cytoscape';
+import { loadGraphData as fetchGraphData } from './api.js';
 
 // ========================
 // Configuration
@@ -15,7 +16,7 @@ const LAYER_COLORS: Record<string, string> = {
   unknown: '#6b7280',
 };
 
-const KIND_SHAPES: Record<string, string> = {
+const KIND_SHAPES: Record<string, cytoscape.Css.NodeShape> = {
   class: 'diamond',
   function: 'roundrectangle',
   method: 'roundrectangle',
@@ -70,29 +71,7 @@ async function init() {
 // Data Loading
 // ========================
 async function loadGraphData(): Promise<{ nodes: any[]; edges: any[] } | null> {
-  try {
-    // Try fetching from API (when served by codeatlas serve)
-    const response = await fetch('/api/graph');
-    if (response.ok) {
-      return await response.json();
-    }
-  } catch {
-    // Not running via serve command
-  }
-
-  // Try loading from URL parameter
-  const params = new URLSearchParams(window.location.search);
-  const dataUrl = params.get('data');
-  if (dataUrl) {
-    try {
-      const response = await fetch(dataUrl);
-      return await response.json();
-    } catch (err) {
-      console.error('Failed to load graph data from URL:', err);
-    }
-  }
-
-  return null;
+  return fetchGraphData();
 }
 
 // ========================
