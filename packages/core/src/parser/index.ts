@@ -887,19 +887,14 @@ export class CodeParser {
     symbols: ParsedSymbol[],
     relationships: ParsedRelationship[],
   ): void {
-    // Python: from X import Y
+    // Python: from X import Y, Z — target the imported symbol names.
     if (node.type === 'import_from_statement') {
-      // Get the module name (first dotted_name child)
-      const moduleNode = node.children.find(c => c.type === 'dotted_name');
-      if (moduleNode) {
-        const moduleName = sourceCode.slice(moduleNode.startIndex, moduleNode.endIndex);
-        // Create import relationship for the first symbol in the file
-        // (or we can skip if no matching symbol)
-        const firstSymbol = symbols[0];
-        if (firstSymbol) {
+      const firstSymbol = symbols[0];
+      if (firstSymbol) {
+        for (const name of this.extractImportedNames(node, sourceCode)) {
           relationships.push({
             sourceName: firstSymbol.name,
-            targetName: moduleName,
+            targetName: name,
             kind: 'imports',
             line: node.startPosition.row + 1,
           });
@@ -907,7 +902,7 @@ export class CodeParser {
       }
     }
 
-    // Python: import X
+    // Python: import X — module-level dependency (target is the module name).
     if (node.type === 'import_statement') {
       const moduleNode = node.children.find(c => c.type === 'dotted_name');
       if (moduleNode) {
@@ -924,19 +919,33 @@ export class CodeParser {
       }
     }
 
-    // JS/TS: import { X } from 'module'
+    // JS/TS: import { X } from 'module' — target the imported symbol names;
+    // side-effect imports fall back to the module path.
     if (node.type === 'import_statement' || node.type === 'import') {
-      const sourceNode = node.children.find(c => c.type === 'string' || c.type === 'string_fragment');
-      if (sourceNode) {
-        const source = sourceCode.slice(sourceNode.startIndex, sourceNode.endIndex).replace(/^['"]|['"]$/g, '');
-        const firstSymbol = symbols[0];
-        if (firstSymbol) {
-          relationships.push({
-            sourceName: firstSymbol.name,
-            targetName: source,
-            kind: 'imports',
-            line: node.startPosition.row + 1,
-          });
+      const firstSymbol = symbols[0];
+      if (firstSymbol) {
+        const names = this.extractImportedNames(node, sourceCode);
+        if (names.length > 0) {
+          for (const name of names) {
+            relationships.push({
+              sourceName: firstSymbol.name,
+              targetName: name,
+              kind: 'imports',
+              line: node.startPosition.row + 1,
+            });
+          }
+        } else {
+          // Side-effect import (`import 'x';`) — module-level dependency only.
+          const sourceNode = node.children.find(c => c.type === 'string' || c.type === 'string_fragment');
+          if (sourceNode) {
+            const source = sourceCode.slice(sourceNode.startIndex, sourceNode.endIndex).replace(/^['"]|['"]$/g, '');
+            relationships.push({
+              sourceName: firstSymbol.name,
+              targetName: source,
+              kind: 'imports',
+              line: node.startPosition.row + 1,
+            });
+          }
         }
       }
     }
@@ -944,6 +953,66 @@ export class CodeParser {
     for (const child of node.children) {
       this.walkForImportRelationships(child, sourceCode, symbols, relationships);
     }
+  }
+
+  /**
+   * Extract the imported symbol names from an import statement.
+   *
+   * - `import { A, B } from` -> [A, B]
+   * - `import Default from` -> [Default]
+   * - `import * as ns from` -> [ns]
+   * - `from x import y, z` -> [y, z]
+   * - `import m` / `import 'm';` -> [] (module-level only)
+   *
+   * Aliases resolve to the original name (the graph symbol name).
+   */
+  private extractImportedNames(node: SyntaxNode, sourceCode: string): string[] {
+    const names: string[] = [];
+    // JS/TS: names live under `import_clause`
+    const clause = node.children.find(c => c.type === 'import_clause');
+    if (clause) {
+      for (const part of clause.namedChildren ?? []) {
+        if (part.type === 'named_imports') {
+          // `{ A, B }` container — the specifiers live one level deeper.
+          for (const spec of part.namedChildren ?? []) {
+            if (spec.type === 'import_specifier') {
+              const orig = spec.childForFieldName('name') ?? spec.namedChild(0);
+              if (orig) names.push(sourceCode.slice(orig.startIndex, orig.endIndex));
+            }
+          }
+        } else if (part.type === 'import_specifier') {
+          // `A` or `A as B` — use the original name `A`.
+          const orig = part.childForFieldName('name') ?? part.namedChild(0);
+          if (orig) names.push(sourceCode.slice(orig.startIndex, orig.endIndex));
+        } else if (part.type === 'identifier') {
+          // Default import
+          names.push(sourceCode.slice(part.startIndex, part.endIndex));
+        } else if (part.type === 'namespace_import') {
+          // `* as ns` — the local alias stands in for the module.
+          const id = part.namedChild(0);
+          if (id) names.push(sourceCode.slice(id.startIndex, id.endIndex));
+        }
+      }
+      return names;
+    }
+
+    // Python `from X import y, z`: the imported names follow the `import`
+    // keyword as `dotted_name` / `aliased_import` siblings of the module path.
+    if (node.type === 'import_from_statement') {
+      const importKw = node.children.find(c => c.type === 'import');
+      if (!importKw) return names;
+      for (const sib of node.namedChildren ?? []) {
+        if (sib.startIndex <= importKw.endIndex) continue; // module path side
+        if (sib.type === 'dotted_name') {
+          names.push(sourceCode.slice(sib.startIndex, sib.endIndex));
+        } else if (sib.type === 'aliased_import') {
+          // `y as z` — use the original name `y`.
+          const orig = sib.namedChild(0);
+          if (orig) names.push(sourceCode.slice(orig.startIndex, orig.endIndex));
+        }
+      }
+    }
+    return names;
   }
 
   /**

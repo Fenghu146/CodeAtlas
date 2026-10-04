@@ -245,3 +245,60 @@ describe.each(FIXTURES.map((f) => [f.language, f] as const))('extracts %s', (_la
     }
   });
 });
+
+describe('import relationships target imported symbols', () => {
+  const parse = async (code: string, file: string) => {
+    await parser.loadLanguage(file.endsWith('.py') ? 'python' : 'typescript');
+    return parser.parse(code, file);
+  };
+  const importEdges = (result: { relationships: { kind: string; sourceName: string; targetName: string }[] }) =>
+    result.relationships.filter((r) => r.kind === 'imports').map((r) => `${r.sourceName}->${r.targetName}`);
+
+  it('links each TS named/default/namespace import to its symbol name', async () => {
+    const result = await parse(
+      `import { UserService, other } from '../services/user-service.js';
+import Default from './def.js';
+import * as ns from './ns.js';
+import './side-effect.js';
+
+export class UserController {
+  list() { return 1; }
+}`,
+      '/tmp/imp/src/api/users.ts',
+    );
+    const edges = importEdges(result);
+    expect(edges).toContain('UserController->UserService');
+    expect(edges).toContain('UserController->other');
+    expect(edges).toContain('UserController->Default');
+    expect(edges).toContain('UserController->ns');
+    // Side-effect import keeps the module path (no symbol to name).
+    expect(edges).toContain('UserController->./side-effect.js');
+  });
+
+  it('resolves TS aliases to the original symbol name', async () => {
+    const result = await parse(
+      `import { UserService as Svc } from './svc.js';
+
+export class C {}`,
+      '/tmp/imp/src/c.ts',
+    );
+    expect(importEdges(result)).toContain('C->UserService');
+    expect(importEdges(result)).not.toContain('C->Svc');
+  });
+
+  it('links Python from-imports to each imported symbol name', async () => {
+    const result = await parse(
+      'from os.path import join, exists\nfrom .mod import Cls as Klass\n\n\ndef foo():\n    pass\n',
+      '/tmp/imp/mod.py',
+    );
+    const edges = importEdges(result);
+    expect(edges).toContain('foo->join');
+    expect(edges).toContain('foo->exists');
+    expect(edges).toContain('foo->Cls');
+  });
+
+  it('keeps Python module imports targeting the module name', async () => {
+    const result = await parse('import sys\n\n\ndef foo():\n    pass\n', '/tmp/imp/m2.py');
+    expect(importEdges(result)).toContain('foo->sys');
+  });
+});

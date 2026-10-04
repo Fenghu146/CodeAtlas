@@ -112,6 +112,12 @@ describe('codeatlas queries', () => {
     expect(text).not.toMatch(/using best match/);
   });
 
+  it('traces impact through import edges across files', () => {
+    const text = plain(run(['impact', 'UserService']));
+    expect(text).toMatch(/UserHandler \(imports\)/);
+    expect(text).toMatch(/user-handler\.ts/);
+  });
+
   it('finds a path between two symbols as JSON', () => {
     const result = run(['path', 'createUser', 'save', '--format', 'json']);
     expect(result.status).toBe(0);
