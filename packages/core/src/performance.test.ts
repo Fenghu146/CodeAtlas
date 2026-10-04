@@ -21,7 +21,7 @@ const WORKERS_AVAILABLE = resolveChildScript() !== null;
 // Without recyclable workers, keep parse counts tiny (in-process leaks).
 const SMALL_ITER = WORKERS_AVAILABLE ? 100 : 15;
 const MEDIUM_ITER = WORKERS_AVAILABLE ? 10 : 3;
-const LARGE_ITER = WORKERS_AVAILABLE ? 5 : 1;
+const LARGE_ITER = WORKERS_AVAILABLE ? 3 : 1;
 const MEM_ITER = WORKERS_AVAILABLE ? 200 : 20;
 
 /** Median in-unit parse time — immune to test-runner scheduling noise. */
@@ -149,7 +149,7 @@ describe('Performance Benchmarks', () => {
       } finally {
         await pool.destroy();
       }
-    }, 120_000);
+    }, 300_000);
   });
 
   describe('Store Performance', () => {

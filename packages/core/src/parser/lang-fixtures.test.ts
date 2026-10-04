@@ -57,6 +57,11 @@ export function helper(x: number): number {
 }
 
 export const LIMIT = 10;
+
+export enum Color {
+  Red,
+  Green = 5,
+}
 `,
     symbols: [
       { kind: 'class', name: 'UserService' },
@@ -65,10 +70,13 @@ export const LIMIT = 10;
       { kind: 'method', name: 'create', parent: 'UserService' },
       { kind: 'function', name: 'helper' },
       { kind: 'variable', name: 'LIMIT' },
+      { kind: 'enum', name: 'Color' },
+      { kind: 'constant', name: 'Red', parent: 'Color' },
+      { kind: 'constant', name: 'Green', parent: 'Color' },
     ],
     calls: [['create', 'trim']],
     noCalls: [['create', 'string'], ['create', 'name']],
-    contains: [['UserService', 'constructor'], ['UserService', 'create'], ['UserService', 'prefix']],
+    contains: [['UserService', 'constructor'], ['UserService', 'create'], ['UserService', 'prefix'], ['Color', 'Red'], ['Color', 'Green']],
   },
   {
     language: 'python',
@@ -145,6 +153,11 @@ public class UserService {
         return items.size();
     }
 }
+
+enum Size {
+    SMALL,
+    LARGE
+}
 `,
     symbols: [
       { kind: 'class', name: 'UserService' },
@@ -153,9 +166,12 @@ public class UserService {
       { kind: 'method', name: 'UserService', parent: 'UserService' },
       { kind: 'method', name: 'create', parent: 'UserService' },
       { kind: 'method', name: 'count', parent: 'UserService' },
+      { kind: 'enum', name: 'Size' },
+      { kind: 'constant', name: 'SMALL', parent: 'Size' },
+      { kind: 'constant', name: 'LARGE', parent: 'Size' },
     ],
     calls: [['create', 'trim'], ['count', 'size']],
-    contains: [['UserService', 'prefix'], ['UserService', 'create'], ['UserService', 'count']],
+    contains: [['UserService', 'prefix'], ['UserService', 'create'], ['UserService', 'count'], ['Size', 'SMALL'], ['Size', 'LARGE']],
     noCalls: [['UserService', 'String'], ['create', 'int']],
   },
   {
@@ -194,6 +210,11 @@ impl<T> Wrapper<T> {
 pub trait Draw {
     fn draw(&self);
 }
+
+pub enum Shape {
+    Circle,
+    Square { side: i32 },
+}
 `,
     symbols: [
       // `struct` maps to class: the aggregate kind in the shared vocabulary.
@@ -210,10 +231,15 @@ pub trait Draw {
       // Traits are interfaces in the shared vocabulary.
       { kind: 'interface', name: 'Draw' },
       { kind: 'method', name: 'draw', parent: 'Draw' },
+      { kind: 'enum', name: 'Shape' },
+      { kind: 'constant', name: 'Circle', parent: 'Shape' },
+      { kind: 'constant', name: 'Square', parent: 'Shape' },
+      // Fields of struct-like enum variants belong to the variant type.
+      { kind: 'property', name: 'side', parent: 'Shape' },
     ],
     calls: [['create', 'trim']],
     noCalls: [['create', 'String'], ['helper', 'i32']],
-    contains: [['UserService', 'new'], ['UserService', 'create'], ['Wrapper', 'get'], ['Draw', 'draw']],
+    contains: [['UserService', 'new'], ['UserService', 'create'], ['Wrapper', 'get'], ['Draw', 'draw'], ['Shape', 'Circle'], ['Shape', 'Square']],
   },
   {
     language: 'cpp',
@@ -228,6 +254,11 @@ private:
     std::string prefix_;
 };
 
+enum class Color {
+    Red,
+    Green = 5
+};
+
 }
 `,
     symbols: [
@@ -237,10 +268,13 @@ private:
       { kind: 'class', name: 'UserService', parent: 'svc' },
       { kind: 'property', name: 'prefix_', parent: 'UserService' },
       { kind: 'method', name: 'create', parent: 'UserService' },
+      { kind: 'enum', name: 'Color', parent: 'svc' },
+      { kind: 'constant', name: 'Red', parent: 'Color' },
+      { kind: 'constant', name: 'Green', parent: 'Color' },
     ],
     calls: [],
     noCalls: [['UserService', 'class'], ['create', 'std']],
-    contains: [['svc', 'UserService'], ['UserService', 'prefix_'], ['UserService', 'create']],
+    contains: [['svc', 'UserService'], ['UserService', 'prefix_'], ['UserService', 'create'], ['Color', 'Red'], ['Color', 'Green']],
   },
 ];
 

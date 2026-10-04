@@ -315,15 +315,20 @@ export class CodeParser {
       'field_declaration',    // class/struct members and method declarations
       'preproc_def',          // #define
       'preproc_function_def', // #define FUNC()
+      'enumerator',
       // TypeScript/JavaScript class fields
       'public_field_definition',
+      'enum_assignment',       // TS enum members with values
+      'property_identifier',   // bare TS enum members (`enum C { Red }`)
       // Java specifics
       'method_declaration',
       'constructor_declaration',
       'record_declaration',
+      'enum_constant',
       'annotation_type_declaration',
       // Rust specifics (impl_item is not extracted — it only names the parent)
       'struct_item',
+      'enum_variant',
       'enum_item',
       'trait_item',
       'function_item',
@@ -345,6 +350,11 @@ export class CodeParser {
     if (lang === 'c' || lang === 'cpp') {
       return this.nodeToSymbolC(node, sourceCode, lang);
     }
+    // Bare TS enum members (`enum Color { Red }`) are plain
+    // property_identifier children of enum_body; the same node type marks
+    // object-literal keys and member names everywhere else, which are not
+    // symbols.
+    if (node.type === 'property_identifier' && node.parent?.type !== 'enum_body') return null;
 
     let kind = this.mapNodeKind(node.type);
     if (!kind) return null;
@@ -389,6 +399,12 @@ export class CodeParser {
           ?? (declarator.namedChildCount === 1 ? declarator.namedChild(0) : null)
           ?? declarator;
       }
+    }
+
+    // The node itself may be the name node (bare TS enum member `Red` is a
+    // bare `property_identifier` — no name field, no identifier children).
+    if (!nameNode && (node.type === 'property_identifier' || node.type === 'identifier')) {
+      nameNode = node;
     }
 
     // Fallback: a plain identifier child (never the type — see below).
@@ -478,7 +494,9 @@ export class CodeParser {
           parent.type === 'interface_declaration' ||
           parent.type === 'trait_item' ||
           parent.type === 'struct_item' ||
-          parent.type === 'impl_item';
+          parent.type === 'impl_item' ||
+          parent.type === 'enum_declaration' || // TS/Java enums
+          parent.type === 'enum_item';          // Rust enums
         if (isTypeBody) {
           const parentNameNode = parent.childForFieldName('type')
             ?? parent.childForFieldName('name')
@@ -541,6 +559,9 @@ export class CodeParser {
       case 'enum_specifier':
         kind = 'enum';
         break;
+      case 'enumerator':
+        kind = 'constant';
+        break;
       case 'alias_declaration':
       case 'type_definition':
         kind = 'type';
@@ -595,7 +616,17 @@ export class CodeParser {
     // definitions (`void Manager::load() {}` → Manager).
     const classParent = this.findCClassParent(node);
     let parentName: string | undefined;
-    if (classParent) {
+    if (node.type === 'enumerator') {
+      // Enum members attach to their enum (the closest enclosing one).
+      let scope: SyntaxNode | null = node.parent;
+      while (scope && scope.type !== 'translation_unit') {
+        if (scope.type === 'enum_specifier') {
+          parentName = scope.childForFieldName('name')?.text?.trim() || undefined;
+          break;
+        }
+        scope = scope.parent;
+      }
+    } else if (classParent) {
       parentName = classParent.childForFieldName('name')?.text?.replace(/<.*>/s, '').trim();
     } else if (decl?.qualifierNode) {
       parentName = decl.qualifierNode.text.replace(/<.*>/s, '').trim();
@@ -721,6 +752,12 @@ export class CodeParser {
       'interface_declaration': 'interface',
       'type_alias_declaration': 'type',
       'enum_declaration': 'enum',
+      'enum_item': 'enum',
+      'enum_assignment': 'constant',
+      'enum_constant': 'constant',
+      'enum_variant': 'constant',
+      'enumerator': 'constant',
+      'property_identifier': 'constant',
       // Variables/Constants
       'lexical_declaration': 'variable',   // const/let
       'variable_declaration': 'variable',  // var

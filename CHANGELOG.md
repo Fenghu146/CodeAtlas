@@ -6,6 +6,12 @@ versioning.
 
 ## [Unreleased]
 
+### Added
+- **Enum members extract across languages** as `constant` symbols with
+  containment edges to their enum: C/C++ `enumerator`, TS bare and valued
+  members (`Red`, `Green = 5`), Java `enum_constant`, Rust `enum_item` /
+  `enum_variant` (struct-variant fields become `property` of the enum)
+
 ### Fixed
 - **Containment edges cover every member kind** (properties, nested types,
   namespace-level functions, trait/interface methods) and resolve by
@@ -23,7 +29,9 @@ versioning.
 - Language fixture suite extended to 24 cases with containment and
   negative-classification assertions (284 tests total)
 - **Import relationships now link imported symbol names** (`import { X } from` / `from m import X` → `X`), enabling cross-file `impact` tracing (previously named imports produced no resolvable edges)
-- README: tool/command/test counts corrected to the current state (30 CLI commands, 28 MCP tools, 279 tests)
+- README: tool/command/test counts corrected to the current state (30 CLI commands, 28 MCP tools, 284 tests)
+- Perf large-file case hardened against machine contention (fewer iterations,
+  300s timeout; the worker-side `parseMs` assertion is unchanged)
 
 ## [0.1.0] — 2026-10-03
 
