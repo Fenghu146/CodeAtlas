@@ -1,6 +1,6 @@
 {
   "name": "@codeatlas/core",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "CodeAtlas core engine — parsing, graph building, storage, search and AI analysis",
   "license": "MIT",

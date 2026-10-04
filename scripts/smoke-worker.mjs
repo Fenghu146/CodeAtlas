@@ -32,10 +32,13 @@ child.on('exit', (code) => {
     try {
       const res = JSON.parse(line);
       if (res.id === 1) {
+        // Protocol: { ok, result: { symbols, relationships }, ... }; tolerate
+        // a flat shape too in case the response is unwrapped later.
+        const payload = res.result ?? res;
         const kinds = {};
-        for (const s of res.symbols ?? []) kinds[s.kind] = (kinds[s.kind] ?? 0) + 1;
+        for (const s of payload.symbols ?? []) kinds[s.kind] = (kinds[s.kind] ?? 0) + 1;
         console.log('parse ok:', res.ok, '| symbols:', JSON.stringify(kinds),
-          '| calls:', (res.relationships ?? []).length);
+          '| calls:', (payload.relationships ?? []).length);
         process.exit(res.ok ? 0 : 1);
       }
     } catch { /* ready/trace lines */ }

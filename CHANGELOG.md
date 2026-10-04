@@ -6,6 +6,11 @@ versioning.
 
 ## [Unreleased]
 
+## [0.1.1] — 2026-10-04
+
+Extraction-quality release: cross-file `impact` works, language edge cases
+closed, enum members extract everywhere.
+
 ### Added
 - **Enum members extract across languages** as `constant` symbols with
   containment edges to their enum: C/C++ `enumerator`, TS bare and valued

@@ -1,6 +1,6 @@
 {
   "name": "@codeatlas/mcp-server",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "CodeAtlas MCP Server — expose the code graph to AI tools via the Model Context Protocol",
   "license": "MIT",

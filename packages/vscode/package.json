@@ -1,6 +1,6 @@
 {
   "name": "codeatlas",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "displayName": "CodeAtlas",
   "description": "Interactive code knowledge graph for VSCode - visualize architecture, search semantically, analyze impact",
   "publisher": "codeatlas",
