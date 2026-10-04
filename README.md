@@ -8,7 +8,7 @@
 [![Node.js](https://img.shields.io/badge/node-%3E%3D22.13.0-339933?logo=node.js&logoColor=white)](https://nodejs.org)
 [![pnpm](https://img.shields.io/badge/pnpm-9-F69220?logo=pnpm&logoColor=white)](https://pnpm.io)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
-[![Tests](https://img.shields.io/badge/tests-184%20passing-brightgreen)](#-开发)
+[![Tests](https://img.shields.io/badge/tests-279%20passing-brightgreen)](#-开发)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
 [简介](#-项目简介) · [特性](#-核心特性) · [架构](#-技术架构) · [快速开始](#-快速开始) · [CLI](#-cli-命令) · [MCP](#-mcp-工具) · [开发](#-开发)
@@ -55,7 +55,7 @@ CodeAtlas 是一个**代码结构分析与可视化工具**。它用 [Tree-sitte
 - 🎯 **Agent 自主编码** — `plan → generate → verify` 迭代，以及多 Agent 任务编排
 - 🔄 **执行感知** — 集成 Flowtrace 运行时数据，结合静态图谱分析热路径与失败模式
 - 🔧 **嵌入式支持** — 面向 STM32 / ESP32 / 嵌入式 Linux，识别 RTOS 任务、中断、外设、Kbuild/设备树等
-- 💻 **多端交付** — CLI（28 命令）/ MCP Server（38 工具）/ Web / VSCode 扩展
+- 💻 **多端交付** — CLI（30 命令）/ MCP Server（28 工具）/ Web / VSCode 扩展
 - 📤 **多格式导出** — JSON / CSV / Mermaid / 邻接矩阵 / Foam 知识库 / 文档骨架
 
 ---
@@ -68,7 +68,7 @@ CodeAtlas 是一个**代码结构分析与可视化工具**。它用 [Tree-sitte
 │                                                             │
 │   ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐       │
 │   │   MCP    │ │   CLI    │ │   Web    │ │ VSCode   │       │
-│   │  Server  │ │  (28 命令)│ │ Cytoscape│ │Extension │       │
+│   │  Server  │ │  (30 命令)│ │ Cytoscape│ │Extension │       │
 │   └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘       │
 │        └────────────┴────────────┴────────────┘             │
 ├─────────────────────────────────────────────────────────────┤
@@ -124,7 +124,7 @@ CodeAtlas 是一个**代码结构分析与可视化工具**。它用 [Tree-sitte
 | Web 可视化 | Cytoscape.js + Vite | 力导向/层次布局，层级着色、交互式详情面板 |
 | VSCode 扩展 | VSCode Extension API | TreeView + Webview + Hover + CodeLens |
 | 包管理 | pnpm workspaces | Monorepo，跨包 `workspace:*` 依赖共享 |
-| 测试 | Vitest | 单元 + 集成 + 性能测试，共 184 个用例 |
+| 测试 | Vitest | 单元 + 集成 + 性能测试，共 279 个用例 |
 
 ---
 
@@ -149,9 +149,9 @@ CodeAtlas/
 │   │       ├── cache/            # 基于哈希的智能缓存
 │   │       ├── utils/            # 协议安全日志器等
 │   │       └── index.ts          # 公共 API 出口
-│   ├── cli/                      # @codeatlas/cli — codeatlas 命令行（28 个命令）
+│   ├── cli/                      # @codeatlas/cli — codeatlas 命令行（30 个命令）
 │   │   └── src/{index.ts,commands/*}
-│   ├── mcp-server/               # @codeatlas/mcp-server — MCP Server（38 个工具）
+│   ├── mcp-server/               # @codeatlas/mcp-server — MCP Server（28 个工具）
 │   │   └── src/server.ts
 │   ├── web/                      # @codeatlas/web — Cytoscape.js 可视化
 │   │   └── {index.html, src/app.ts, src/styles.css}
@@ -543,8 +543,8 @@ pnpm --filter @codeatlas/core test
 
 ```bash
 pnpm test
-# ✓ 15 test files
-# ✓ 184 tests passed
+# ✓ 22 test files
+# ✓ 279 tests passed
 ```
 
 覆盖单元测试、集成测试（完整扫描流水线）与性能基准（解析/存储/内存）。
@@ -558,7 +558,7 @@ pnpm test
 ### ✅ 已完成
 - [x] Tree-sitter 多语言解析（12 种语言）
 - [x] 知识图谱构建 + `node:sqlite` 存储 + 增量扫描
-- [x] CLI（28 命令）/ MCP Server（38 工具）/ Web / VSCode 扩展四端交付
+- [x] CLI（30 命令）/ MCP Server（28 工具）/ Web / VSCode 扩展四端交付
 - [x] 架构分层、影响分析、依赖健康、热点分析
 - [x] 语义搜索（本地 / OpenAI / Ollama 嵌入）+ 混合检索
 - [x] AI 代码审查、架构守护、坏味道检测、重构建议、图谱 diff

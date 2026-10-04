@@ -4,6 +4,12 @@ All notable changes to CodeAtlas are documented here. The project follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and semantic
 versioning.
 
+## [Unreleased]
+
+### Fixed
+- **Import relationships now link imported symbol names** (`import { X } from` / `from m import X` → `X`), enabling cross-file `impact` tracing (previously named imports produced no resolvable edges)
+- README: tool/command/test counts corrected to the current state (30 CLI commands, 28 MCP tools, 279 tests)
+
 ## [0.1.0] — 2026-10-03
 
 First public release. CodeAtlas turns a source tree into a queryable symbol
