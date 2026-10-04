@@ -8,7 +8,7 @@
 [![Node.js](https://img.shields.io/badge/node-%3E%3D22.13.0-339933?logo=node.js&logoColor=white)](https://nodejs.org)
 [![pnpm](https://img.shields.io/badge/pnpm-9-F69220?logo=pnpm&logoColor=white)](https://pnpm.io)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
-[![Tests](https://img.shields.io/badge/tests-279%20passing-brightgreen)](#-开发)
+[![Tests](https://img.shields.io/badge/tests-284%20passing-brightgreen)](#-开发)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
 [简介](#-项目简介) · [特性](#-核心特性) · [架构](#-技术架构) · [快速开始](#-快速开始) · [CLI](#-cli-命令) · [MCP](#-mcp-工具) · [开发](#-开发)
@@ -124,7 +124,7 @@ CodeAtlas 是一个**代码结构分析与可视化工具**。它用 [Tree-sitte
 | Web 可视化 | Cytoscape.js + Vite | 力导向/层次布局，层级着色、交互式详情面板 |
 | VSCode 扩展 | VSCode Extension API | TreeView + Webview + Hover + CodeLens |
 | 包管理 | pnpm workspaces | Monorepo，跨包 `workspace:*` 依赖共享 |
-| 测试 | Vitest | 单元 + 集成 + 性能测试，共 279 个用例 |
+| 测试 | Vitest | 单元 + 集成 + 性能测试，共 284 个用例 |
 
 ---
 
@@ -544,7 +544,7 @@ pnpm --filter @codeatlas/core test
 ```bash
 pnpm test
 # ✓ 22 test files
-# ✓ 279 tests passed
+# ✓ 284 tests passed
 ```
 
 覆盖单元测试、集成测试（完整扫描流水线）与性能基准（解析/存储/内存）。

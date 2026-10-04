@@ -83,6 +83,27 @@ export class GraphBuilder {
       const symbolNameToId = new Map(fileSymbols.map(s => [s.name, s.id]));
 
       for (const rel of result.relationships) {
+        // contains edges link a scope to its own member. Resolve the member by
+        // name + parentName so same-named members of sibling types (two classes
+        // with `get`) never cross-link; the parent may live in another file
+        // (C++ out-of-class definitions) and resolves through the global map.
+        if (rel.kind === 'contains') {
+          const child = fileSymbols.find(s => s.name === rel.targetName && s.parentName === rel.sourceName);
+          const parentId =
+            fileSymbols.find(s => s.name === rel.sourceName && s.id !== child?.id)?.id ??
+            (child ? globalNameToIds.get(rel.sourceName)?.find(id => id !== child.id) : undefined);
+          if (child && parentId && symbols.has(parentId)) {
+            relationships.push({
+              id: `${parentId}->contains->${child.id}`,
+              sourceId: parentId,
+              targetId: child.id,
+              kind: 'contains',
+              line: rel.line,
+            });
+          }
+          continue;
+        }
+
         // First try local (same file), then global (cross-file)
         let sourceId = symbolNameToId.get(rel.sourceName);
         let targetId = symbolNameToId.get(rel.targetName);

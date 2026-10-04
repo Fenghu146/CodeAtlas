@@ -29,6 +29,10 @@ interface Fixture {
   noCalls: Array<[string, string]>;
   /** symbol names that must NOT be extracted (locals, reassignments) */
   absent?: Array<{ name: string }>;
+  /** parent -> child containment pairs that must be present */
+  contains?: Array<[string, string]>;
+  /** formatted `kind name@parent` strings that must NOT be extracted */
+  noSymbols?: string[];
 }
 
 const FIXTURES: Fixture[] = [
@@ -64,6 +68,7 @@ export const LIMIT = 10;
     ],
     calls: [['create', 'trim']],
     noCalls: [['create', 'string'], ['create', 'name']],
+    contains: [['UserService', 'constructor'], ['UserService', 'create'], ['UserService', 'prefix']],
   },
   {
     language: 'python',
@@ -85,6 +90,18 @@ def format_name(raw: str) -> str:
 class UserService:
     def create(self, name):
         return User(format_name(name))
+
+class Circle:
+    def __init__(self, r: float) -> None:
+        self.r = r
+
+    @property
+    def radius(self) -> float:
+        return self.r
+
+    @radius.setter
+    def radius(self, value: float) -> None:
+        self.r = value
 `,
     symbols: [
       { kind: 'class', name: 'User' },
@@ -96,12 +113,18 @@ class UserService:
       { kind: 'function', name: 'format_name' },
       { kind: 'class', name: 'UserService' },
       { kind: 'method', name: 'create', parent: 'UserService' },
+      { kind: 'class', name: 'Circle' },
+      { kind: 'property', name: 'r', parent: 'Circle' },
+      // @property accessors are the class's property, not methods.
+      { kind: 'property', name: 'radius', parent: 'Circle' },
     ],
     calls: [['format_name', 'strip'], ['create', 'format_name']],
     // `name`/`new_name` are local values, `str`/`None` are types.
     noCalls: [['create', 'name'], ['rename', 'str'], ['__init__', 'str']],
     // `scratch` is a function-local binding — never a symbol.
     absent: [{ name: 'scratch' }],
+    noSymbols: ['method radius@Circle'],
+    contains: [['User', 'name'], ['Circle', 'r'], ['Circle', 'radius']],
   },
   {
     language: 'java',
@@ -132,6 +155,7 @@ public class UserService {
       { kind: 'method', name: 'count', parent: 'UserService' },
     ],
     calls: [['create', 'trim'], ['count', 'size']],
+    contains: [['UserService', 'prefix'], ['UserService', 'create'], ['UserService', 'count']],
     noCalls: [['UserService', 'String'], ['create', 'int']],
   },
   {
@@ -156,6 +180,20 @@ impl UserService {
 fn helper(x: i32) -> i32 {
     x * 2
 }
+
+pub struct Wrapper<T> {
+    value: T,
+}
+
+impl<T> Wrapper<T> {
+    pub fn get(&self) -> &T {
+        &self.value
+    }
+}
+
+pub trait Draw {
+    fn draw(&self);
+}
 `,
     symbols: [
       // `struct` maps to class: the aggregate kind in the shared vocabulary.
@@ -165,9 +203,17 @@ fn helper(x: i32) -> i32 {
       { kind: 'method', name: 'new', parent: 'UserService' },
       { kind: 'method', name: 'create', parent: 'UserService' },
       { kind: 'function', name: 'helper' },
+      // Generic args never leak into names: `Wrapper<T>` is `Wrapper`.
+      { kind: 'class', name: 'Wrapper' },
+      { kind: 'property', name: 'value', parent: 'Wrapper' },
+      { kind: 'method', name: 'get', parent: 'Wrapper' },
+      // Traits are interfaces in the shared vocabulary.
+      { kind: 'interface', name: 'Draw' },
+      { kind: 'method', name: 'draw', parent: 'Draw' },
     ],
     calls: [['create', 'trim']],
     noCalls: [['create', 'String'], ['helper', 'i32']],
+    contains: [['UserService', 'new'], ['UserService', 'create'], ['Wrapper', 'get'], ['Draw', 'draw']],
   },
   {
     language: 'cpp',
@@ -186,12 +232,15 @@ private:
 `,
     symbols: [
       { kind: 'namespace', name: 'svc' },
-      { kind: 'class', name: 'UserService' },
+      { kind: 'namespace', name: 'svc' },
+      // Namespace children report their namespace as parent.
+      { kind: 'class', name: 'UserService', parent: 'svc' },
       { kind: 'property', name: 'prefix_', parent: 'UserService' },
       { kind: 'method', name: 'create', parent: 'UserService' },
     ],
     calls: [],
     noCalls: [['UserService', 'class'], ['create', 'std']],
+    contains: [['svc', 'UserService'], ['UserService', 'prefix_'], ['UserService', 'create']],
   },
 ];
 
@@ -216,6 +265,19 @@ describe.each(FIXTURES.map((f) => [f.language, f] as const))('extracts %s', (_la
     for (const a of fixture.absent ?? []) {
       const names = result.symbols.map((s) => s.name);
       expect(names, `${fixture.file}: '${a.name}' must not become a symbol`).not.toContain(a.name);
+    }
+    for (const nope of fixture.noSymbols ?? []) {
+      expect(actual, `${fixture.file}: ${nope} must not be extracted`).not.toContain(nope);
+    }
+  });
+
+  it('links members to their containing scope', () => {
+    const result = parser.parse(fixture.code, fixture.file);
+    const edges = result.relationships
+      .filter((r) => r.kind === 'contains')
+      .map((r) => `${r.sourceName} -> ${r.targetName}`);
+    for (const [parent, child] of fixture.contains ?? []) {
+      expect(edges, `${fixture.file}: expected contains ${parent} -> ${child} in [${edges.join(', ')}]`).toContain(`${parent} -> ${child}`);
     }
   });
 

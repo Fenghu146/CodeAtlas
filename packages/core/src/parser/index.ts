@@ -236,7 +236,19 @@ export class CodeParser {
         // Parse as method
         const symbol = this.nodeToSymbol(node, sourceCode, lang);
         if (symbol) {
-          symbol.kind = 'method';
+          // Python `@property` accessors are the class's property, not a method.
+          let kind: 'method' | 'property' = 'method';
+          if (node.parent?.type === 'decorated_definition') {
+            for (const dec of node.parent.namedChildren.filter(c => c.type === 'decorator')) {
+              const decNameNode = dec.namedChild(0);
+              const decText = decNameNode ? sourceCode.slice(decNameNode.startIndex, decNameNode.endIndex) : '';
+              if (decText === 'property' || /\.(getter|setter|deleter)$/.test(decText)) {
+                kind = 'property';
+                break;
+              }
+            }
+          }
+          symbol.kind = kind;
           // Set parentName from the class we found
           let p = node.parent;
           while (p) {
@@ -472,7 +484,10 @@ export class CodeParser {
             ?? parent.childForFieldName('name')
             ?? parent.children.find(c => c.type === 'identifier' || c.type === 'type_identifier');
           if (parentNameNode) {
-            parentName = sourceCode.slice(parentNameNode.startIndex, parentNameNode.endIndex);
+            parentName = sourceCode
+        .slice(parentNameNode.startIndex, parentNameNode.endIndex)
+        .replace(/<.*>/s, '') // generic args: `Wrapper<T>` -> `Wrapper`
+        .trim();
             // A function declared in a type body is a method.
             if (kind === 'function') kind = 'method';
           }
@@ -581,9 +596,21 @@ export class CodeParser {
     const classParent = this.findCClassParent(node);
     let parentName: string | undefined;
     if (classParent) {
-      parentName = classParent.childForFieldName('name')?.text;
+      parentName = classParent.childForFieldName('name')?.text?.replace(/<.*>/s, '').trim();
     } else if (decl?.qualifierNode) {
-      parentName = decl.qualifierNode.text;
+      parentName = decl.qualifierNode.text.replace(/<.*>/s, '').trim();
+    } else {
+      // Namespace scope: `namespace svc { class UserService {} }` -> parent svc.
+      // (Separate from findCClassParent, which must not turn namespace-level
+      // functions into methods.)
+      let scope: SyntaxNode | null = node.parent;
+      while (scope && scope.type !== 'translation_unit') {
+        if (scope.type === 'namespace_definition') {
+          parentName = scope.childForFieldName('name')?.text;
+          break;
+        }
+        scope = scope.parent;
+      }
     }
 
     return {
@@ -1022,31 +1049,19 @@ export class CodeParser {
     symbols: ParsedSymbol[],
     relationships: ParsedRelationship[],
   ): void {
-    // Build parent-child relationships based on symbol hierarchy
+    // Every symbol that resolved to a declared scope is contained by it -
+    // methods, properties, nested types and namespace-level functions alike.
+    // Matching on parentName (not on kind) keeps interface/struct/namespace
+    // members linked too; a member named after its own scope (a constructor
+    // sharing its class's name) would be a self-edge and is skipped.
     for (const symbol of symbols) {
-      if (symbol.kind === 'class') {
-        // Find methods that belong to this class
-        for (const other of symbols) {
-          if (other.kind === 'method' && other.parentName === symbol.name) {
-            relationships.push({
-              sourceName: symbol.name,
-              targetName: other.name,
-              kind: 'contains',
-              line: symbol.startLine,
-            });
-          }
-        }
-      }
-
-      // File-level contains (optional - adds too much noise for now)
-      // if (symbol.kind === 'function' || symbol.kind === 'class') {
-      //   relationships.push({
-      //     sourceName: '__file__',
-      //     targetName: symbol.name,
-      //     kind: 'contains',
-      //     line: 1,
-      //   });
-      // }
+      if (!symbol.parentName || symbol.parentName === symbol.name) continue;
+      relationships.push({
+        sourceName: symbol.parentName,
+        targetName: symbol.name,
+        kind: 'contains',
+        line: symbol.startLine,
+      });
     }
   }
 
@@ -1272,47 +1287,28 @@ export class CodeParser {
     symbols: ParsedSymbol[],
     relationships: ParsedRelationship[],
   ): void {
-    // Python decorated_definition: contains decorator + function/class
+    // Decorated definition: every decorator links to the decorated symbol
     if (node.type === 'decorated_definition') {
-      // Find the decorator child
-      const decoratorNode = node.children.find(c => c.type === 'decorator');
-      if (decoratorNode) {
-        // Extract decorator name
-        const callNode = decoratorNode.children.find(c => c.type === 'call');
-        let decoratorName: string;
-
-        if (callNode) {
-          // @router.get("/") - extract from call
-          const attrNode = callNode.children.find(c => c.type === 'attribute');
-          if (attrNode) {
-            decoratorName = sourceCode.slice(attrNode.startIndex, attrNode.endIndex);
-          } else {
-            const funcNode = callNode.children.find(c => c.type === 'identifier');
-            decoratorName = funcNode ? funcNode.text : 'unknown';
-          }
-        } else {
-          // @router - simple identifier
-          const nameNode = decoratorNode.children.find(c =>
-            c.type === 'identifier' || c.type === 'dotted_name'
-          );
-          decoratorName = nameNode ? sourceCode.slice(nameNode.startIndex, nameNode.endIndex) : 'unknown';
-        }
-
-        // Find the function/class being decorated
-        const funcNode = node.children.find(c =>
-          c.type === 'function_definition' || c.type === 'class_definition'
-        );
-        if (funcNode) {
-          const nameNode = funcNode.children.find(c => c.type === 'identifier');
-          if (nameNode) {
-            const symbolName = nameNode.text;
-            relationships.push({
-              sourceName: symbolName,
-              targetName: decoratorName,
-              kind: 'decorates',
-              line: decoratorNode.startPosition.row + 1,
-            });
-          }
+      const decorated = node.children.find(c =>
+        c.type === 'function_definition' || c.type === 'class_definition'
+      );
+      const nameNode = decorated?.children.find(c => c.type === 'identifier');
+      const symbolName = nameNode ? nameNode.text : undefined;
+      if (symbolName) {
+        // Stacked decorators each contribute one edge; attribute decorators
+        // (`@radius.setter`) name their whole attribute expression.
+        for (const decoratorNode of node.children.filter(c => c.type === 'decorator')) {
+          const callNode = decoratorNode.children.find(c => c.type === 'call');
+          const callee = callNode
+            ? (callNode.childForFieldName('function') ?? callNode.children.find(c => c.type === 'attribute') ?? callNode.children.find(c => c.type === 'identifier'))
+            : decoratorNode.children.find(c => c.type === 'identifier' || c.type === 'dotted_name' || c.type === 'attribute');
+          const decoratorName = callee ? sourceCode.slice(callee.startIndex, callee.endIndex) : 'unknown';
+          relationships.push({
+            sourceName: symbolName,
+            targetName: decoratorName,
+            kind: 'decorates',
+            line: decoratorNode.startPosition.row + 1,
+          });
         }
       }
     }

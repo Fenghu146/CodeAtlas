@@ -7,6 +7,21 @@ versioning.
 ## [Unreleased]
 
 ### Fixed
+- **Containment edges cover every member kind** (properties, nested types,
+  namespace-level functions, trait/interface methods) and resolve by
+  name + parentName so same-named members of sibling types never cross-link
+- **Rust/C++ generic arguments never leak into parent names** (`Wrapper<T>` is
+  `Wrapper`), so methods attach to their generic type again
+- **Python `@property` accessors classify as `property`** (getter/setter/deleter
+  collapse to the property), not as methods
+- **Decorators**: stacked decorators each emit a `decorates` edge;
+  attribute decorators (`@radius.setter`) no longer resolve to `unknown`
+- **C++ namespace members report their namespace as parent** (`svc -> UserService`
+  containment)
+
+### Changed
+- Language fixture suite extended to 24 cases with containment and
+  negative-classification assertions (284 tests total)
 - **Import relationships now link imported symbol names** (`import { X } from` / `from m import X` → `X`), enabling cross-file `impact` tracing (previously named imports produced no resolvable edges)
 - README: tool/command/test counts corrected to the current state (30 CLI commands, 28 MCP tools, 279 tests)
 
